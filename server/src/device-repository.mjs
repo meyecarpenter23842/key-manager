@@ -91,6 +91,44 @@ function publicDeviceValue(device) {
   };
 }
 
+function assertOperationalLicense(license) {
+  if (license.status === "ARCHIVED") {
+    throw domainError(404, "INVALID_LICENSE", "License is invalid");
+  }
+  if (license.status === "REVOKED") {
+    throw domainError(403, "LICENSE_REVOKED", "License is revoked");
+  }
+  if (
+    license.status === "EXPIRED" ||
+    (license.license_type === "SUBSCRIPTION" &&
+      license.expires_at !== null &&
+      new Date(license.expires_at) <= new Date())
+  ) {
+    throw domainError(403, "LICENSE_EXPIRED", "License is expired");
+  }
+}
+
+async function lockLicense(client, licenseId) {
+  const result = await client.query(
+    `SELECT id, license_type, expires_at, max_devices, status
+     FROM licenses
+     WHERE id = $1
+     FOR UPDATE`,
+    [licenseId],
+  );
+  return result.rows[0] ?? null;
+}
+
+async function activeDeviceCount(client, licenseId) {
+  const result = await client.query(
+    `SELECT count(*)::int AS count
+     FROM devices
+     WHERE license_id = $1 AND status = 'ACTIVE'`,
+    [licenseId],
+  );
+  return result.rows[0].count;
+}
+
 export class DeviceRepository {
   constructor(pool) {
     this.pool = pool;
@@ -151,65 +189,81 @@ export class DeviceRepository {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      const licenseResult = await client.query(
-        `SELECT id, license_type, expires_at, max_devices, status
-         FROM licenses
-         WHERE id = $1
-         FOR UPDATE`,
-        [licenseId],
-      );
-      if (licenseResult.rowCount === 0) {
+      const license = await lockLicense(client, licenseId);
+      if (!license) {
         await client.query("ROLLBACK");
         return null;
       }
-      const license = licenseResult.rows[0];
-      if (license.status === "ARCHIVED") {
-        throw domainError(404, "INVALID_LICENSE", "License not found");
-      }
-      if (license.status === "REVOKED") {
-        throw domainError(409, "LICENSE_REVOKED", "License is revoked");
-      }
-      if (
-        license.license_type === "SUBSCRIPTION" &&
-        license.expires_at !== null &&
-        new Date(license.expires_at) <= new Date()
-      ) {
-        throw domainError(409, "LICENSE_EXPIRED", "License is expired");
-      }
+      assertOperationalLicense(license);
 
       const existingResult = await client.query(
         `SELECT ${DEVICE_SELECT}
          FROM devices d
-         WHERE d.license_id = $1 AND d.device_id = $2`,
+         WHERE d.license_id = $1 AND d.device_id = $2
+         FOR UPDATE`,
         [licenseId, deviceId],
       );
       if (existingResult.rowCount > 0) {
         const existing = existingResult.rows[0];
         if (existing.status === "REVOKED") {
-          throw domainError(409, "DEVICE_REVOKED", "Device is revoked");
+          throw domainError(403, "DEVICE_REVOKED", "Device is revoked");
         }
-        const updateResult = await client.query(
+        if (existing.status === "ACTIVE") {
+          const updateResult = await client.query(
+            `UPDATE devices
+             SET device_name = COALESCE($3, device_name),
+                 os = COALESCE($4, os),
+                 app_version = COALESCE($5, app_version),
+                 last_seen_at = now()
+             WHERE license_id = $1 AND device_id = $2
+             RETURNING ${DEVICE_RETURNING}`,
+            [licenseId, deviceId, deviceName, os, appVersion],
+          );
+          await client.query("COMMIT");
+          return { device: updateResult.rows[0], created: false, reactivated: false };
+        }
+
+        const activeCount = await activeDeviceCount(client, licenseId);
+        if (activeCount >= license.max_devices) {
+          throw domainError(409, "DEVICE_LIMIT_REACHED", "Device limit reached");
+        }
+        const reactivateResult = await client.query(
           `UPDATE devices
-           SET device_name = COALESCE($3, device_name),
+           SET status = 'ACTIVE',
+               device_name = COALESCE($3, device_name),
                os = COALESCE($4, os),
                app_version = COALESCE($5, app_version),
-               last_seen_at = now()
+               activated_at = now(),
+               last_seen_at = now(),
+               revoked_at = NULL
            WHERE license_id = $1 AND device_id = $2
            RETURNING ${DEVICE_RETURNING}`,
           [licenseId, deviceId, deviceName, os, appVersion],
         );
+        const device = reactivateResult.rows[0];
+        await insertDeviceEvent(client, {
+          licenseId,
+          deviceRowId: device.id,
+          eventType: "DEVICE_ACTIVATED",
+          oldValue: publicDeviceValue(existing),
+          newValue: publicDeviceValue(device),
+          actorType: "LICENSE_API",
+          metadata: { reactivated: true, activeDeviceCountBefore: activeCount, maxDevices: license.max_devices },
+        });
+        await insertDeviceAudit(client, {
+          actorType: "LICENSE_API",
+          action: "DEVICE_ACTIVATED",
+          deviceRowId: device.id,
+          ipAddress,
+          requestId,
+          metadata: { licenseId, deviceId, reactivated: true },
+        });
         await client.query("COMMIT");
-        return { device: updateResult.rows[0], created: false };
+        return { device, created: false, reactivated: true };
       }
 
-      const activeCountResult = await client.query(
-        `SELECT count(*)::int AS count
-         FROM devices
-         WHERE license_id = $1 AND status = 'ACTIVE'`,
-        [licenseId],
-      );
-      const activeDeviceCount = activeCountResult.rows[0].count;
-      if (activeDeviceCount >= license.max_devices) {
+      const activeCount = await activeDeviceCount(client, licenseId);
+      if (activeCount >= license.max_devices) {
         throw domainError(409, "DEVICE_LIMIT_REACHED", "Device limit reached");
       }
 
@@ -226,7 +280,7 @@ export class DeviceRepository {
         eventType: "DEVICE_ACTIVATED",
         newValue: publicDeviceValue(device),
         actorType: "LICENSE_API",
-        metadata: { activeDeviceCountBefore: activeDeviceCount, maxDevices: license.max_devices },
+        metadata: { activeDeviceCountBefore: activeCount, maxDevices: license.max_devices },
       });
       await insertDeviceAudit(client, {
         actorType: "LICENSE_API",
@@ -237,7 +291,132 @@ export class DeviceRepository {
         metadata: { licenseId, deviceId },
       });
       await client.query("COMMIT");
-      return { device, created: true };
+      return { device, created: true, reactivated: false };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async validateDevice({
+    licenseId,
+    deviceId,
+    touch = false,
+    deviceName = null,
+    os = null,
+    appVersion = null,
+  }) {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const license = await lockLicense(client, licenseId);
+      if (!license) {
+        await client.query("ROLLBACK");
+        return null;
+      }
+      assertOperationalLicense(license);
+
+      const deviceResult = await client.query(
+        `SELECT ${DEVICE_SELECT}
+         FROM devices d
+         WHERE d.license_id = $1 AND d.device_id = $2
+         FOR UPDATE`,
+        [licenseId, deviceId],
+      );
+      if (deviceResult.rowCount === 0) {
+        throw domainError(404, "INVALID_LICENSE", "License is not activated on this device");
+      }
+      const device = deviceResult.rows[0];
+      if (device.status === "REVOKED") {
+        throw domainError(403, "DEVICE_REVOKED", "Device is revoked");
+      }
+      if (device.status !== "ACTIVE") {
+        throw domainError(404, "INVALID_LICENSE", "License is not active on this device");
+      }
+
+      if (!touch) {
+        await client.query("COMMIT");
+        return device;
+      }
+
+      const updateResult = await client.query(
+        `UPDATE devices
+         SET device_name = COALESCE($3, device_name),
+             os = COALESCE($4, os),
+             app_version = COALESCE($5, app_version),
+             last_seen_at = now()
+         WHERE license_id = $1 AND device_id = $2
+         RETURNING ${DEVICE_RETURNING}`,
+        [licenseId, deviceId, deviceName, os, appVersion],
+      );
+      await client.query("COMMIT");
+      return updateResult.rows[0];
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async deactivateDevice({ licenseId, deviceId, requestId = null, ipAddress = null }) {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const license = await lockLicense(client, licenseId);
+      if (!license) {
+        await client.query("ROLLBACK");
+        return null;
+      }
+      assertOperationalLicense(license);
+
+      const deviceResult = await client.query(
+        `SELECT ${DEVICE_SELECT}
+         FROM devices d
+         WHERE d.license_id = $1 AND d.device_id = $2
+         FOR UPDATE`,
+        [licenseId, deviceId],
+      );
+      if (deviceResult.rowCount === 0) {
+        throw domainError(404, "INVALID_LICENSE", "License is not activated on this device");
+      }
+      const before = deviceResult.rows[0];
+      if (before.status === "REVOKED") {
+        throw domainError(403, "DEVICE_REVOKED", "Device is revoked");
+      }
+      if (before.status === "INACTIVE") {
+        await client.query("COMMIT");
+        return before;
+      }
+
+      const updateResult = await client.query(
+        `UPDATE devices
+         SET status = 'INACTIVE', last_seen_at = now(), revoked_at = NULL
+         WHERE id = $1
+         RETURNING ${DEVICE_RETURNING}`,
+        [before.id],
+      );
+      const device = updateResult.rows[0];
+      await insertDeviceEvent(client, {
+        licenseId,
+        deviceRowId: device.id,
+        eventType: "DEVICE_DEACTIVATED",
+        oldValue: publicDeviceValue(before),
+        newValue: publicDeviceValue(device),
+        actorType: "LICENSE_API",
+      });
+      await insertDeviceAudit(client, {
+        actorType: "LICENSE_API",
+        action: "DEVICE_DEACTIVATED",
+        deviceRowId: device.id,
+        ipAddress,
+        requestId,
+        metadata: { licenseId, deviceId },
+      });
+      await client.query("COMMIT");
+      return device;
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;
