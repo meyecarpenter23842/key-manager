@@ -1,28 +1,16 @@
-# dependencies
 node_modules/
-
-# next.js
-.next/
-out/
-
-# production / test output
-build/
 dist/
-coverage/
-
-# local environment files
 .env
 .env.*
 !.env.example
-
-# logs
 *.log
-pnpm-debug.log*
-
-# editor / OS
 .DS_Store
-.idea/
 .vscode/
+.idea/
 
-# TypeScript
-*.tsbuildinfo
+# Rust / Tauri
+src-tauri/target/
+**/*.rs.bk
+
+# Windows build output
+*.pdb
