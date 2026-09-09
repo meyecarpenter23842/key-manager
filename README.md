@@ -60,6 +60,20 @@ cargo check --manifest-path src-tauri/Cargo.toml
 cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
+## Database schema / migrations
+
+Phase 1 PostgreSQL schema nằm trong `database/`. Migration chạy từ trusted developer/CI/backend environment, không chạy từ Desktop App.
+
+```powershell
+$env:DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/key_manager_dev"
+pnpm db:check
+pnpm db:migrate
+pnpm db:test
+Remove-Item Env:DATABASE_URL
+```
+
+Xem `database/README.md` để chạy PostgreSQL local bằng Docker và quy tắc migration forward-only/checksum.
+
 ## Build desktop
 
 ```powershell
@@ -72,6 +86,9 @@ pnpm tauri build
 src/                  React desktop UI
 src-tauri/            Tauri/Rust native shell
 src-tauri/src/        Native commands và desktop integration
+database/migrations/  Ordered PostgreSQL migrations
+database/tests/       Database schema/constraint tests
+scripts/database.mjs  Migration/test runner dùng psql
 tests/                Frontend tests
 .github/workflows/    CI
 ```
@@ -84,5 +101,6 @@ tests/                Frontend tests
 - Public License API và Admin API sẽ được triển khai thành backend online riêng.
 - UI desktop chỉ gọi Admin API qua HTTPS.
 - `VITE_*` chỉ được dùng cho dữ liệu public/config không nhạy cảm.
+- `DATABASE_URL`/`PG*` chỉ dành cho migration tooling hoặc backend trusted environment, không được đổi thành biến `VITE_*`.
 
 Ảnh `12.jpg` ở root chỉ là UI reference.

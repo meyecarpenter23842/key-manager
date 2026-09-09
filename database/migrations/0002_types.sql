@@ -1,0 +1,9 @@
+-- 0002_types.sql
+
+CREATE TYPE application_status AS ENUM ('ACTIVE', 'DISABLED');
+CREATE TYPE license_type AS ENUM ('SUBSCRIPTION', 'LIFETIME');
+CREATE TYPE license_status AS ENUM ('ACTIVE', 'EXPIRED', 'REVOKED', 'ARCHIVED');
+CREATE TYPE device_status AS ENUM ('ACTIVE', 'REVOKED');
+CREATE TYPE admin_role AS ENUM ('OWNER', 'ADMIN', 'STAFF');
+CREATE TYPE admin_status AS ENUM ('ACTIVE', 'DISABLED');
+CREATE TYPE actor_type AS ENUM ('ADMIN', 'SYSTEM', 'LICENSE_API');
