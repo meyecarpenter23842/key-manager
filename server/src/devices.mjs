@@ -1,4 +1,4 @@
-const DEVICE_STATUSES = new Set(["ACTIVE", "REVOKED"]);
+const DEVICE_STATUSES = new Set(["ACTIVE", "INACTIVE", "REVOKED"]);
 
 function inputError(message) {
   const error = new Error(message);
@@ -53,7 +53,7 @@ export function parseDeviceFilters(url, isUuid) {
   const statusText = url.searchParams.get("status");
   const status = statusText?.trim().toUpperCase() || null;
   if (status !== null && !DEVICE_STATUSES.has(status)) {
-    throw inputError("status must be ACTIVE or REVOKED");
+    throw inputError("status must be ACTIVE, INACTIVE or REVOKED");
   }
 
   return { licenseId, status };
