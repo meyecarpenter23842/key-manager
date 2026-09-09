@@ -107,7 +107,7 @@ jobs:
         run: node scripts/database.mjs test
 
   admin_api:
-    name: Admin API auth integration
+    name: Admin API integration
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -150,7 +150,7 @@ jobs:
       - name: Migrate clean database
         run: node scripts/database.mjs migrate
 
-      - name: Test admin auth and RBAC end-to-end
+      - name: Test Admin API end-to-end
         run: pnpm server:test:integration
 
   desktop:
