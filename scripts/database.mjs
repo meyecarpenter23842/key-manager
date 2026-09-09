@@ -8,6 +8,7 @@ import {
   acceptedMigrationChecksums,
   migrationChecksum,
 } from './database-checksum.mjs';
+import { parseMigrationRows } from './database-output.mjs';
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const migrationsDir = join(repoRoot, 'database', 'migrations');
@@ -121,11 +122,8 @@ function migrate(migrations) {
   );
 
   const applied = new Map();
-  if (rows) {
-    for (const row of rows.split('\n')) {
-      const [versionText, name, storedChecksum] = row.split('\t');
-      applied.set(Number(versionText), { name, checksum: storedChecksum });
-    }
+  for (const row of parseMigrationRows(rows)) {
+    applied.set(row.version, { name: row.name, checksum: row.checksum });
   }
 
   for (const file of migrations) {
