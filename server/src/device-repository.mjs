@@ -17,6 +17,18 @@ const DEVICE_SELECT = `
   d.last_seen_at AS "lastSeenAt",
   d.revoked_at AS "revokedAt"`;
 
+const DEVICE_RETURNING = `
+  id,
+  license_id AS "licenseId",
+  device_id AS "deviceId",
+  device_name AS "deviceName",
+  os,
+  app_version AS "appVersion",
+  status,
+  activated_at AS "activatedAt",
+  last_seen_at AS "lastSeenAt",
+  revoked_at AS "revokedAt"`;
+
 async function insertDeviceEvent(
   client,
   {
@@ -183,7 +195,7 @@ export class DeviceRepository {
                app_version = COALESCE($5, app_version),
                last_seen_at = now()
            WHERE license_id = $1 AND device_id = $2
-           RETURNING ${DEVICE_SELECT}`,
+           RETURNING ${DEVICE_RETURNING}`,
           [licenseId, deviceId, deviceName, os, appVersion],
         );
         await client.query("COMMIT");
@@ -204,7 +216,7 @@ export class DeviceRepository {
       const insertResult = await client.query(
         `INSERT INTO devices (license_id, device_id, device_name, os, app_version)
          VALUES ($1, $2, $3, $4, $5)
-         RETURNING ${DEVICE_SELECT}`,
+         RETURNING ${DEVICE_RETURNING}`,
         [licenseId, deviceId, deviceName, os, appVersion],
       );
       const device = insertResult.rows[0];
@@ -267,7 +279,7 @@ export class DeviceRepository {
         `UPDATE devices
          SET status = 'REVOKED', revoked_at = now()
          WHERE id = $1
-         RETURNING ${DEVICE_SELECT}`,
+         RETURNING ${DEVICE_RETURNING}`,
         [id],
       );
       const device = updateResult.rows[0];
