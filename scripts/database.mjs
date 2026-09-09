@@ -1,9 +1,13 @@
 import { spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+
+import {
+  acceptedMigrationChecksums,
+  migrationChecksum,
+} from './database-checksum.mjs';
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const migrationsDir = join(repoRoot, 'database', 'migrations');
@@ -87,10 +91,6 @@ function sqlLiteral(value) {
   return `'${value.replaceAll("'", "''")}'`;
 }
 
-function checksum(content) {
-  return createHash('sha256').update(content, 'utf8').digest('hex');
-}
-
 function checkOrder() {
   const migrations = orderedSqlFiles(migrationsDir);
   const tests = orderedSqlFiles(testsDir);
@@ -131,13 +131,27 @@ function migrate(migrations) {
   for (const file of migrations) {
     const version = Number(file.slice(0, 4));
     const content = readFileSync(join(migrationsDir, file), 'utf8');
-    const currentChecksum = checksum(content);
+    const currentChecksum = migrationChecksum(content);
+    const acceptedChecksums = acceptedMigrationChecksums(content);
     const existing = applied.get(version);
 
     if (existing) {
-      if (existing.name !== file || existing.checksum !== currentChecksum) {
+      if (existing.name !== file || !acceptedChecksums.has(existing.checksum)) {
         fail(`applied migration ${version} does not match ${file}; never edit an applied migration`);
       }
+
+      if (existing.checksum !== currentChecksum) {
+        runPsql(
+          [],
+          `UPDATE public.schema_migrations\n` +
+            `SET checksum = ${sqlLiteral(currentChecksum)}\n` +
+            `WHERE version = ${version}\n` +
+            `  AND name = ${sqlLiteral(file)}\n` +
+            `  AND checksum = ${sqlLiteral(existing.checksum)};\n`,
+        );
+        log(`normalized checksum for ${file}`);
+      }
+
       log(`already applied ${file}`);
       continue;
     }
