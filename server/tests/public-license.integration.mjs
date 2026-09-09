@@ -333,7 +333,7 @@ try {
     deviceId: "device-two",
     appVersion: "2.2.0",
   });
-  assert.equal(revokedDevice.response.status, 403);
+  assert.equal(revokedDevice.response.status, 409);
   assert.equal(revokedDevice.body.error.code, "DEVICE_REVOKED");
 
   const reactivateInactive = await api(baseUrl, "/api/v1/license/activate", {
@@ -354,7 +354,7 @@ try {
     deviceId: "device-two",
     appVersion: "2.2.0",
   });
-  assert.equal(revokedCannotReactivate.response.status, 403);
+  assert.equal(revokedCannotReactivate.response.status, 409);
   assert.equal(revokedCannotReactivate.body.error.code, "DEVICE_REVOKED");
 
   const deactivationEvents = await pool.query(
