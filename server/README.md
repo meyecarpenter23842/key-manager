@@ -11,10 +11,11 @@ The Admin API is server infrastructure. It is not bundled into the Tauri desktop
 - Every `/api/admin/v1/*` route except login authenticates the session on the server.
 - RBAC is enforced in the API, not by hiding desktop buttons.
 - OWNER can manage admin accounts. ADMIN can manage applications/licenses/customers/devices but not admin accounts. STAFF can read applications, read/write customers, create licenses and renew licenses; revoke/archive/device-limit changes remain restricted.
-- Important auth, application, customer and license changes are written to `audit_logs`.
+- Important auth, application, customer, license and device changes are written to `audit_logs`.
 - Raw license keys are generated with 128 bits of cryptographic randomness and returned only by the create-license response. PostgreSQL stores only a SHA-256 digest plus a masked preview.
 - License list/detail/customer-detail responses never include `license_key_hash`. Audit/event metadata never stores raw keys or hashes.
 - Expired subscriptions are projected as `EXPIRED` by the Admin API even if their stored operational status was still `ACTIVE`; revoke/archive take precedence over expiry.
+- Device activation serializes on the owning license row before counting active devices, so concurrent requests cannot exceed `max_devices`.
 
 ## Local setup
 
@@ -127,8 +128,27 @@ or:
 
 A subscription that is still valid extends from its current expiry. An expired subscription extends from server `now()` and becomes active immediately unless it is revoked. Renewing a revoked license preserves `REVOKED`. Reactivating a revoked but already expired subscription yields `EXPIRED`, so it still requires renewal. Archived licenses cannot be renewed, revoked or have their device limit changed.
 
-Device-limit changes cannot lower `maxDevices` below the current number of active devices. Phase 5 will add activation/revoke-device behavior; Phase 4 only owns the license-level policy.
+Device-limit changes cannot lower `maxDevices` below the current number of active devices.
 
-Every license mutation writes `license_events` and `audit_logs` in the same database transaction as the license update. Events include `LICENSE_CREATED`, `LICENSE_RENEWED`, `LICENSE_CHANGED_TO_LIFETIME`, `LICENSE_REVOKED`, `LICENSE_REACTIVATED`, `LICENSE_ARCHIVED`, and `DEVICE_LIMIT_CHANGED`.
+## Devices
 
-The desktop app may receive only the public Admin API URL plus an authenticated session token. Database credentials and future private signing keys stay on the server. Desktop license validation remains a separate public License API phase and must go through HTTPS rather than direct PostgreSQL access.
+- `GET /api/admin/v1/devices?q=&licenseId=&status=&limit=&offset=` — OWNER/ADMIN/STAFF
+- `POST /api/admin/v1/devices/:id/revoke` — OWNER/ADMIN
+
+Phase 5 keeps device activation in the server-side device domain instead of exposing a Desktop endpoint early. The public `POST /api/v1/license/activate` contract remains Phase 6 and will call the same device service only after application/key/version/license checks are complete.
+
+Activation behavior:
+
+- The license row is locked with `FOR UPDATE` before the active-device count is read.
+- An already-active identical `device_id` is idempotent: it updates `last_seen_at` and supplied metadata without consuming another slot.
+- A previously revoked `device_id` returns `DEVICE_REVOKED` and is not silently reactivated.
+- A new device is rejected with `DEVICE_LIMIT_REACHED` when the active count is already at `max_devices`.
+- Revoke changes the device to `REVOKED`, sets `revoked_at`, and immediately releases that slot for another device.
+- Device metadata includes `device_name`, `os`, `app_version`, `activated_at`, and `last_seen_at`.
+- `DEVICE_ACTIVATED` and `DEVICE_REVOKED` are written to `license_events`; matching audit records are written in the same transaction.
+
+Because activate and revoke both take the same license-row lock first, concurrent activation/revoke operations for one license use a consistent lock order and cannot race the device-limit count.
+
+Every license mutation writes `license_events` and `audit_logs` in the same database transaction as the license update. Events include `LICENSE_CREATED`, `LICENSE_RENEWED`, `LICENSE_CHANGED_TO_LIFETIME`, `LICENSE_REVOKED`, `LICENSE_REACTIVATED`, `LICENSE_ARCHIVED`, `DEVICE_LIMIT_CHANGED`, `DEVICE_ACTIVATED`, and `DEVICE_REVOKED`.
+
+The desktop app may receive only the public Admin API URL plus an authenticated session token for administration. Database credentials and future private signing keys stay on the server. Desktop license validation remains a separate public License API phase and must go through HTTPS rather than direct PostgreSQL access.
