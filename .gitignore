@@ -14,3 +14,7 @@ src-tauri/target/
 
 # Windows build output
 *.pdb
+
+# Generated framework files
+.next/
+src-tauri/gen/
