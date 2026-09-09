@@ -1,0 +1,25 @@
+import { useCallback, useEffect, useState, type FormEvent } from "react";
+
+import { createCustomer, listCustomers, updateCustomer } from "./api";
+import { EmptyState, Field, LoadingRows, Modal, PAGE_SIZE, Pager, SearchBox, emptyPagination, useDebouncedValue, type ErrorHandler, type Notify } from "./components";
+import { CheckIcon, EditIcon, PlusIcon } from "./icons";
+import type { AdminRole, Customer } from "./types";
+import { can, formatDateTime } from "./ui";
+
+export function CustomerFormModal({ customer, onClose, onSaved, onError }: { customer?: Customer; onClose: () => void; onSaved: () => void; onError: ErrorHandler }) {
+  const [busy, setBusy] = useState(false);
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); const data = new FormData(event.currentTarget); setBusy(true);
+    const payload = { name: String(data.get("name") || ""), phone: String(data.get("phone") || "").trim() || null, email: String(data.get("email") || "").trim() || null, company: String(data.get("company") || "").trim() || null, note: String(data.get("note") || "").trim() || null };
+    try { if (customer) await updateCustomer(customer.id, payload); else await createCustomer(payload); onSaved(); }
+    catch (error) { onError(error); } finally { setBusy(false); }
+  }
+  return <Modal title={customer ? "Chỉnh sửa khách hàng" : "Thêm khách hàng"} subtitle="Thông tin dùng để tìm kiếm và gắn với license." onClose={onClose}><form className="modal-form" onSubmit={submit}><Field label="Tên khách hàng"><input name="name" defaultValue={customer?.name || ""} required autoFocus /></Field><div className="form-grid two"><Field label="Email"><input name="email" type="email" defaultValue={customer?.email || ""} /></Field><Field label="Số điện thoại"><input name="phone" defaultValue={customer?.phone || ""} /></Field></div><Field label="Công ty"><input name="company" defaultValue={customer?.company || ""} /></Field><Field label="Ghi chú"><textarea name="note" rows={3} defaultValue={customer?.note || ""} /></Field><div className="modal-actions"><button className="button ghost" type="button" onClick={onClose}>Hủy</button><button className="button primary" type="submit" disabled={busy}>{busy ? <span className="spinner" /> : <CheckIcon size={17} />} Lưu</button></div></form></Modal>;
+}
+
+export function CustomersPage({ role, onError, notify }: { role: AdminRole; onError: ErrorHandler; notify: Notify }) {
+  const [items, setItems] = useState<Customer[]>([]); const [pagination, setPagination] = useState(emptyPagination); const [search, setSearch] = useState(""); const [offset, setOffset] = useState(0); const [loading, setLoading] = useState(true); const [editing, setEditing] = useState<Customer | "new" | null>(null); const debouncedSearch = useDebouncedValue(search);
+  const load = useCallback(async () => { setLoading(true); try { const result = await listCustomers({ q: debouncedSearch, limit: PAGE_SIZE, offset }); setItems(result.customers); setPagination(result.pagination); } catch (error) { onError(error); } finally { setLoading(false); } }, [debouncedSearch, offset, onError]);
+  useEffect(() => { void load(); }, [load]); useEffect(() => setOffset(0), [debouncedSearch]);
+  return <div className="page"><div className="page-heading"><div><span className="eyebrow dark">CUSTOMERS</span><h1>Khách hàng</h1><p>Lưu thông tin người dùng và tổ chức sở hữu license.</p></div>{can(role, "customer:write") ? <button className="button primary" type="button" onClick={() => setEditing("new")}><PlusIcon size={18} /> Thêm khách hàng</button> : null}</div><section className="panel"><div className="toolbar"><SearchBox value={search} onChange={setSearch} placeholder="Tên, email, điện thoại, công ty..." /></div><div className="table-wrap"><table><thead><tr><th>Khách hàng</th><th>Liên hệ</th><th>Công ty</th><th>Cập nhật</th><th /></tr></thead><tbody>{loading ? <LoadingRows columns={5} /> : items.map((item) => <tr key={item.id}><td><div className="cell-title"><span className="customer-avatar">{item.name.slice(0, 1).toUpperCase()}</span><div><strong>{item.name}</strong><small>{item.note ? item.note.slice(0, 52) : "Không có ghi chú"}</small></div></div></td><td><div className="cell-stack"><strong>{item.email || "—"}</strong><small>{item.phone || "Chưa có số điện thoại"}</small></div></td><td>{item.company || <span className="muted">—</span>}</td><td>{formatDateTime(item.updatedAt)}</td><td>{can(role, "customer:write") ? <button className="icon-button small" type="button" onClick={() => setEditing(item)} aria-label="Sửa"><EditIcon size={16} /></button> : null}</td></tr>)}</tbody></table>{!loading && items.length === 0 ? <EmptyState title="Chưa có khách hàng" body="Thêm khách hàng để gắn license và tìm kiếm nhanh hơn." /> : null}</div><Pager pagination={pagination} onOffset={setOffset} /></section>{editing ? <CustomerFormModal customer={editing === "new" ? undefined : editing} onClose={() => setEditing(null)} onError={onError} onSaved={() => { notify(editing === "new" ? "Đã tạo khách hàng" : "Đã cập nhật khách hàng"); setEditing(null); void load(); }} /> : null}</div>;
+}

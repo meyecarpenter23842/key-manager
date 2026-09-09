@@ -1,0 +1,15 @@
+import { useCallback, useEffect, useState, type FormEvent } from "react";
+
+import { createAdmin, listAdmins } from "./api";
+import { Field, LoadingRows, Modal, StatusBadge, type ErrorHandler, type Notify } from "./components";
+import { PlusIcon } from "./icons";
+import type { AdminListItem, AdminRole } from "./types";
+import { formatDateTime } from "./ui";
+
+export function TeamPage({ onError, notify }: { onError: ErrorHandler; notify: Notify }) {
+  const [items, setItems] = useState<AdminListItem[]>([]); const [loading, setLoading] = useState(true); const [createOpen, setCreateOpen] = useState(false);
+  const load = useCallback(async () => { setLoading(true); try { setItems(await listAdmins()); } catch (error) { onError(error); } finally { setLoading(false); } }, [onError]);
+  useEffect(() => { void load(); }, [load]);
+  async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const data = new FormData(event.currentTarget); try { await createAdmin({ email: String(data.get("email") || ""), password: String(data.get("password") || ""), role: String(data.get("role")) as AdminRole }); notify("Đã tạo tài khoản admin"); setCreateOpen(false); void load(); } catch (error) { onError(error); } }
+  return <div className="page"><div className="page-heading"><div><span className="eyebrow dark">ACCESS</span><h1>Đội ngũ quản trị</h1><p>Quản lý tài khoản và vai trò truy cập Admin API.</p></div><button className="button primary" type="button" onClick={() => setCreateOpen(true)}><PlusIcon size={18} /> Thêm admin</button></div><section className="panel"><div className="table-wrap"><table><thead><tr><th>Tài khoản</th><th>Vai trò</th><th>Trạng thái</th><th>Lần đăng nhập cuối</th><th>Ngày tạo</th></tr></thead><tbody>{loading ? <LoadingRows columns={5} /> : items.map((item) => <tr key={item.id}><td><div className="cell-title"><span className="customer-avatar admin-avatar">{item.email[0].toUpperCase()}</span><strong>{item.email}</strong></div></td><td><span className="role-badge">{item.role}</span></td><td><StatusBadge status={item.status} /></td><td>{formatDateTime(item.last_login_at)}</td><td>{formatDateTime(item.created_at)}</td></tr>)}</tbody></table></div></section>{createOpen ? <Modal title="Thêm admin" subtitle="Quyền thực tế luôn được Admin API enforce theo RBAC." onClose={() => setCreateOpen(false)}><form className="modal-form" onSubmit={submit}><Field label="Email"><input name="email" type="email" required /></Field><Field label="Mật khẩu" hint="Tối thiểu theo policy của server."><input name="password" type="password" required /></Field><Field label="Vai trò"><select name="role" defaultValue="STAFF"><option value="STAFF">STAFF — vận hành cơ bản</option><option value="ADMIN">ADMIN — quản lý license/app/device</option><option value="OWNER">OWNER — toàn quyền</option></select></Field><div className="modal-actions"><button className="button ghost" type="button" onClick={() => setCreateOpen(false)}>Hủy</button><button className="button primary" type="submit"><PlusIcon size={17} /> Tạo tài khoản</button></div></form></Modal> : null}</div>;
+}

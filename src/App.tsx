@@ -1,43 +1,21 @@
-import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
 
-import { APP_DESCRIPTION, APP_NAME } from "./config/app";
+import { clearSession, hasSession, me } from "./api";
+import { AdminShell } from "./AdminShell";
+import { KeyIcon } from "./icons";
+import { LoginScreen } from "./LoginScreen";
+import type { AdminIdentity } from "./types";
 
 export function App() {
-  const [runtime, setRuntime] = useState("Đang kết nối Tauri runtime...");
+  const [admin, setAdmin] = useState<AdminIdentity | null>(null);
+  const [booting, setBooting] = useState(true);
 
   useEffect(() => {
-    void invoke<string>("app_info")
-      .then(setRuntime)
-      .catch(() => setRuntime("Browser preview — chạy `pnpm tauri dev` để mở desktop app"));
+    if (!hasSession()) { setBooting(false); return; }
+    void me().then(setAdmin).catch(() => clearSession()).finally(() => setBooting(false));
   }, []);
 
-  return (
-    <main className="app-shell">
-      <section className="hero-card">
-        <div className="eyebrow">DESKTOP ADMIN</div>
-        <h1>{APP_NAME}</h1>
-        <p className="description">{APP_DESCRIPTION}</p>
-        <div className="runtime-row">
-          <span className="status-dot" aria-hidden="true" />
-          <span>{runtime}</span>
-        </div>
-      </section>
-
-      <section className="architecture-grid" aria-label="Kiến trúc nền tảng">
-        <article>
-          <strong>Tauri + React</strong>
-          <span>Desktop UI chạy native WebView trên Windows.</span>
-        </article>
-        <article>
-          <strong>License API</strong>
-          <span>Backend HTTPS riêng sẽ được triển khai ở phase tiếp theo.</span>
-        </article>
-        <article>
-          <strong>PostgreSQL</strong>
-          <span>Chỉ backend được truy cập database; desktop client không truy cập trực tiếp.</span>
-        </article>
-      </section>
-    </main>
-  );
+  if (booting) return <main className="boot-screen"><div className="brand-mark large"><KeyIcon size={28} /></div><span className="spinner dark" /><strong>Đang mở Key Manager...</strong></main>;
+  if (!admin) return <LoginScreen onLogin={setAdmin} />;
+  return <AdminShell admin={admin} onSignedOut={() => setAdmin(null)} />;
 }
