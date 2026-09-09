@@ -1,92 +1,88 @@
 # Key Manager
 
-Centralized License Management System for multiple Desktop Applications.
+Centralized License Management System cho nhiều Desktop App.
 
-This repository is being built from scratch. The original UI image in the repository is reference material only; it is not an implementation dependency.
+## Nền tảng
 
-## Stack
+Key Manager Admin là **desktop app**, không phải web app:
 
-- Next.js 16 App Router
+- Tauri 2
 - React 19
 - TypeScript
-- pnpm
-- Vitest
-- ESLint + Prettier
-- PostgreSQL/Supabase will be wired in Phase 1
+- Vite
+- Rust
+- pnpm 10.34.4
 
-## Requirements
+License API và PostgreSQL/Supabase sẽ là backend online riêng. Key Manager Desktop và các Desktop App khách chỉ giao tiếp với backend qua HTTPS; không truy cập database trực tiếp.
 
-- Node.js 22+
-- pnpm 12.3.4 (declared in `packageManager`)
+## Yêu cầu Windows
 
-With Corepack:
+1. Node.js 22+
+2. pnpm 10.34.4
+3. Rust stable MSVC
+4. Microsoft C++ Build Tools / Visual Studio Build Tools với workload **Desktop development with C++**
+5. WebView2 Runtime (Windows 10/11 thường đã có)
 
-```bash
-corepack enable
-corepack prepare pnpm@12.3.4 --activate
+Kiểm tra nhanh:
+
+```powershell
+node -v
+pnpm -v
+rustc -V
+cargo -V
 ```
 
-## Local setup
+Nếu chưa có Rust:
 
-```bash
+```powershell
+winget install --id Rustlang.Rustup
+rustup default stable-msvc
+```
+
+## Chạy desktop app
+
+```powershell
 pnpm install
-cp .env.example .env.local
-pnpm dev
+pnpm tauri dev
 ```
 
-Open `http://localhost:3000`.
+Lệnh trên phải mở cửa sổ native **Key Manager**.
 
-## Quality commands
+## Quality checks
 
-```bash
+```powershell
 pnpm lint
 pnpm typecheck
 pnpm test
 pnpm build
+cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+cargo check --manifest-path src-tauri/Cargo.toml
+cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
-Run all required CI checks locally:
+## Build desktop
 
-```bash
-pnpm ci
+```powershell
+pnpm tauri build
 ```
 
-## Project boundaries
+## Cấu trúc
 
 ```text
-src/
-  app/                 Next.js App Router, UI and HTTP route handlers
-    api/admin/          Authenticated Admin API routes (future phases)
-    api/v1/license/     Public Desktop License API routes (future phases)
-  domain/              License/application/customer/device business rules
-  server/
-    admin/              Admin-only services and authorization boundary
-    license/            Public License API orchestration boundary
-  lib/                  Shared infrastructure helpers
+src/                  React desktop UI
+src-tauri/            Tauri/Rust native shell
+src-tauri/src/        Native commands và desktop integration
+tests/                Frontend tests
+.github/workflows/    CI
 ```
 
-Architecture rules:
+## Nguyên tắc kiến trúc
 
-- Desktop Apps never access the database directly.
-- Public License API and Admin API stay as separate trust boundaries.
-- License business rules belong in the domain/service layer, not React components or route handlers.
-- A license must always be scoped to its application.
-- Secrets and signing private keys are server-only.
+- Không đưa database credentials vào desktop app.
+- Không đưa license signing private key vào desktop app.
+- Không để Desktop App truy cập PostgreSQL/Supabase trực tiếp.
+- Public License API và Admin API sẽ được triển khai thành backend online riêng.
+- UI desktop chỉ gọi Admin API qua HTTPS.
+- `VITE_*` chỉ được dùng cho dữ liệu public/config không nhạy cảm.
 
-## API health check
-
-`GET /api/health` returns a minimal service health response and is safe for deployment verification.
-
-## CI
-
-GitHub Actions runs the required Phase 0 checks on pull requests and pushes to `main`:
-
-1. install dependencies
-2. lint
-3. typecheck
-4. tests
-5. production build
-
-## Phase status
-
-Phase 0 establishes only the project foundation. Database schema, authentication, license rules, device rules and License API behavior are intentionally implemented in later phases from the master execution plan in Issue #1.
+Ảnh `12.jpg` ở root chỉ là UI reference.
