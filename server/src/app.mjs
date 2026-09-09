@@ -3,6 +3,15 @@ import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { URL } from "node:url";
 
+import {
+  generateLicenseKey,
+  hashLicenseKey,
+  maskLicenseKey,
+  normalizeDeviceLimit,
+  normalizeLicenseCreate,
+  normalizeLicenseRenew,
+  parseLicenseFilters,
+} from "./licenses.mjs";
 import { PERMISSIONS, hasPermission, isAdminRole } from "./rbac.mjs";
 import {
   isUuid,
@@ -127,6 +136,14 @@ function writeResourceNotFound(response, headers, resource) {
 function pathId(pathname, prefix) {
   const match = new RegExp(`^${prefix}/([^/]+)$`).exec(pathname);
   return match?.[1] ?? null;
+}
+
+function licensePath(pathname) {
+  const match = /^\/api\/admin\/v1\/licenses\/([^/]+)(?:\/(renew|revoke|reactivate|archive|device-limit))?$/.exec(
+    pathname,
+  );
+  if (!match) return null;
+  return { id: match[1], action: match[2] ?? null };
 }
 
 export function createAdminApiServer({ repository, sessionTtlHours = 12, allowedOrigins = [] }) {
@@ -398,6 +415,157 @@ export function createAdminApiServer({ repository, sessionTtlHours = 12, allowed
             return;
           }
         }
+
+        if (request.method === "GET" && url.pathname === "/api/admin/v1/licenses") {
+          if (!requirePermission(response, commonHeaders, session, PERMISSIONS.LICENSE_READ)) return;
+          const { limit, offset } = parsePagination(url);
+          const q = parseSearch(url);
+          const filters = parseLicenseFilters(url, isUuid);
+          const result = await repository.listLicenses({
+            q,
+            qHash: q ? hashLicenseKey(q) : null,
+            ...filters,
+            limit,
+            offset,
+          });
+          writeJson(
+            response,
+            200,
+            {
+              licenses: result.items,
+              pagination: { total: result.total, limit: result.limit, offset: result.offset },
+            },
+            commonHeaders,
+          );
+          return;
+        }
+
+        if (request.method === "POST" && url.pathname === "/api/admin/v1/licenses") {
+          if (!requirePermission(response, commonHeaders, session, PERMISSIONS.LICENSE_CREATE)) return;
+          const data = normalizeLicenseCreate(await readJson(request), isUuid);
+          const application = await repository.getApplicationById(data.applicationId);
+          if (!application) {
+            writeResourceNotFound(response, commonHeaders, "Application");
+            return;
+          }
+          const licenseKey = generateLicenseKey(application.appCode);
+          const license = await repository.createLicense({
+            data,
+            keyHash: hashLicenseKey(licenseKey),
+            keyPreview: maskLicenseKey(licenseKey),
+            actorAdminId: session.admin_id,
+            requestId,
+            ipAddress: clientIp(request),
+          });
+          writeJson(response, 201, { license, licenseKey }, commonHeaders);
+          return;
+        }
+
+        const licenseRoute = licensePath(url.pathname);
+        if (licenseRoute !== null) {
+          if (!isUuid(licenseRoute.id)) {
+            const error = new Error("license id must be a UUID");
+            error.statusCode = 400;
+            throw error;
+          }
+
+          if (licenseRoute.action === null && request.method === "GET") {
+            if (!requirePermission(response, commonHeaders, session, PERMISSIONS.LICENSE_READ)) return;
+            const license = await repository.getLicenseDetail(licenseRoute.id);
+            if (!license) {
+              writeResourceNotFound(response, commonHeaders, "License");
+              return;
+            }
+            writeJson(response, 200, { license }, commonHeaders);
+            return;
+          }
+
+          if (licenseRoute.action === "renew" && request.method === "POST") {
+            if (!requirePermission(response, commonHeaders, session, PERMISSIONS.LICENSE_RENEW)) return;
+            const renewal = normalizeLicenseRenew(await readJson(request));
+            const license = await repository.renewLicense({
+              id: licenseRoute.id,
+              renewal,
+              actorAdminId: session.admin_id,
+              requestId,
+              ipAddress: clientIp(request),
+            });
+            if (!license) {
+              writeResourceNotFound(response, commonHeaders, "License");
+              return;
+            }
+            writeJson(response, 200, { license }, commonHeaders);
+            return;
+          }
+
+          if (licenseRoute.action === "revoke" && request.method === "POST") {
+            if (!requirePermission(response, commonHeaders, session, PERMISSIONS.LICENSE_REVOKE)) return;
+            const license = await repository.revokeLicense({
+              id: licenseRoute.id,
+              actorAdminId: session.admin_id,
+              requestId,
+              ipAddress: clientIp(request),
+            });
+            if (!license) {
+              writeResourceNotFound(response, commonHeaders, "License");
+              return;
+            }
+            writeJson(response, 200, { license }, commonHeaders);
+            return;
+          }
+
+          if (licenseRoute.action === "reactivate" && request.method === "POST") {
+            if (!requirePermission(response, commonHeaders, session, PERMISSIONS.LICENSE_REVOKE)) return;
+            const license = await repository.reactivateLicense({
+              id: licenseRoute.id,
+              actorAdminId: session.admin_id,
+              requestId,
+              ipAddress: clientIp(request),
+            });
+            if (!license) {
+              writeResourceNotFound(response, commonHeaders, "License");
+              return;
+            }
+            writeJson(response, 200, { license }, commonHeaders);
+            return;
+          }
+
+          if (licenseRoute.action === "archive" && request.method === "POST") {
+            if (!requirePermission(response, commonHeaders, session, PERMISSIONS.LICENSE_ARCHIVE)) return;
+            const license = await repository.archiveLicense({
+              id: licenseRoute.id,
+              actorAdminId: session.admin_id,
+              requestId,
+              ipAddress: clientIp(request),
+            });
+            if (!license) {
+              writeResourceNotFound(response, commonHeaders, "License");
+              return;
+            }
+            writeJson(response, 200, { license }, commonHeaders);
+            return;
+          }
+
+          if (licenseRoute.action === "device-limit" && request.method === "PATCH") {
+            if (!requirePermission(response, commonHeaders, session, PERMISSIONS.LICENSE_DEVICE_LIMIT)) {
+              return;
+            }
+            const { maxDevices } = normalizeDeviceLimit(await readJson(request));
+            const license = await repository.updateLicenseDeviceLimit({
+              id: licenseRoute.id,
+              maxDevices,
+              actorAdminId: session.admin_id,
+              requestId,
+              ipAddress: clientIp(request),
+            });
+            if (!license) {
+              writeResourceNotFound(response, commonHeaders, "License");
+              return;
+            }
+            writeJson(response, 200, { license }, commonHeaders);
+            return;
+          }
+        }
       }
 
       writeJson(
@@ -422,7 +590,7 @@ export function createAdminApiServer({ repository, sessionTtlHours = 12, allowed
         statusCode,
         {
           error: {
-            code: statusCode >= 500 ? "SERVER_ERROR" : "INVALID_REQUEST",
+            code: error?.errorCode || (statusCode >= 500 ? "SERVER_ERROR" : "INVALID_REQUEST"),
             message: statusCode >= 500 ? "Internal server error" : error.message,
           },
         },
