@@ -11,7 +11,7 @@ function parsePositiveInteger(value, fallback, name, maximum) {
 
 export function loadServerConfig(env = process.env) {
   if (!env.DATABASE_URL) {
-    throw new Error("DATABASE_URL is required for the Admin API server");
+    throw new Error("DATABASE_URL is required for the Key Manager API server");
   }
 
   return {
@@ -28,5 +28,18 @@ export function loadServerConfig(env = process.env) {
       .split(",")
       .map((value) => value.trim())
       .filter(Boolean),
+    publicRateLimitMax: parsePositiveInteger(
+      env.LICENSE_API_RATE_LIMIT_MAX,
+      120,
+      "LICENSE_API_RATE_LIMIT_MAX",
+      100000,
+    ),
+    publicRateLimitWindowMs:
+      parsePositiveInteger(
+        env.LICENSE_API_RATE_LIMIT_WINDOW_SECONDS,
+        60,
+        "LICENSE_API_RATE_LIMIT_WINDOW_SECONDS",
+        3600,
+      ) * 1000,
   };
 }
