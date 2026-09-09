@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { URL } from "node:url";
 
+import { DeviceRepository } from "./device-repository.mjs";
+import { parseDeviceFilters } from "./devices.mjs";
 import {
   generateLicenseKey,
   hashLicenseKey,
@@ -146,7 +148,20 @@ function licensePath(pathname) {
   return { id: match[1], action: match[2] ?? null };
 }
 
-export function createAdminApiServer({ repository, sessionTtlHours = 12, allowedOrigins = [] }) {
+function devicePath(pathname) {
+  const match = /^\/api\/admin\/v1\/devices\/([^/]+)(?:\/(revoke))?$/.exec(pathname);
+  if (!match) return null;
+  return { id: match[1], action: match[2] ?? null };
+}
+
+export function createAdminApiServer({
+  repository,
+  deviceRepository = null,
+  sessionTtlHours = 12,
+  allowedOrigins = [],
+}) {
+  const devices = deviceRepository ?? new DeviceRepository(repository.pool);
+
   return createServer(async (request, response) => {
     const requestIdHeader = request.headers["x-request-id"];
     const requestId =
@@ -412,6 +427,48 @@ export function createAdminApiServer({ repository, sessionTtlHours = 12, allowed
               return;
             }
             writeJson(response, 200, { customer }, commonHeaders);
+            return;
+          }
+        }
+
+        if (request.method === "GET" && url.pathname === "/api/admin/v1/devices") {
+          if (!requirePermission(response, commonHeaders, session, PERMISSIONS.DEVICE_READ)) return;
+          const { limit, offset } = parsePagination(url);
+          const q = parseSearch(url);
+          const filters = parseDeviceFilters(url, isUuid);
+          const result = await devices.listDevices({ q, ...filters, limit, offset });
+          writeJson(
+            response,
+            200,
+            {
+              devices: result.items,
+              pagination: { total: result.total, limit: result.limit, offset: result.offset },
+            },
+            commonHeaders,
+          );
+          return;
+        }
+
+        const deviceRoute = devicePath(url.pathname);
+        if (deviceRoute !== null) {
+          if (!isUuid(deviceRoute.id)) {
+            const error = new Error("device id must be a UUID");
+            error.statusCode = 400;
+            throw error;
+          }
+          if (deviceRoute.action === "revoke" && request.method === "POST") {
+            if (!requirePermission(response, commonHeaders, session, PERMISSIONS.DEVICE_REVOKE)) return;
+            const device = await devices.revokeDevice({
+              id: deviceRoute.id,
+              actorAdminId: session.admin_id,
+              requestId,
+              ipAddress: clientIp(request),
+            });
+            if (!device) {
+              writeResourceNotFound(response, commonHeaders, "Device");
+              return;
+            }
+            writeJson(response, 200, { device }, commonHeaders);
             return;
           }
         }
