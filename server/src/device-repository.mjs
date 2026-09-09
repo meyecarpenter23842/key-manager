@@ -206,7 +206,7 @@ export class DeviceRepository {
       if (existingResult.rowCount > 0) {
         const existing = existingResult.rows[0];
         if (existing.status === "REVOKED") {
-          throw domainError(403, "DEVICE_REVOKED", "Device is revoked");
+          throw domainError(409, "DEVICE_REVOKED", "Device is revoked");
         }
         if (existing.status === "ACTIVE") {
           const updateResult = await client.query(
@@ -248,7 +248,11 @@ export class DeviceRepository {
           oldValue: publicDeviceValue(existing),
           newValue: publicDeviceValue(device),
           actorType: "LICENSE_API",
-          metadata: { reactivated: true, activeDeviceCountBefore: activeCount, maxDevices: license.max_devices },
+          metadata: {
+            reactivated: true,
+            activeDeviceCountBefore: activeCount,
+            maxDevices: license.max_devices,
+          },
         });
         await insertDeviceAudit(client, {
           actorType: "LICENSE_API",
@@ -330,7 +334,7 @@ export class DeviceRepository {
       }
       const device = deviceResult.rows[0];
       if (device.status === "REVOKED") {
-        throw domainError(403, "DEVICE_REVOKED", "Device is revoked");
+        throw domainError(409, "DEVICE_REVOKED", "Device is revoked");
       }
       if (device.status !== "ACTIVE") {
         throw domainError(404, "INVALID_LICENSE", "License is not active on this device");
@@ -384,7 +388,7 @@ export class DeviceRepository {
       }
       const before = deviceResult.rows[0];
       if (before.status === "REVOKED") {
-        throw domainError(403, "DEVICE_REVOKED", "Device is revoked");
+        throw domainError(409, "DEVICE_REVOKED", "Device is revoked");
       }
       if (before.status === "INACTIVE") {
         await client.query("COMMIT");
