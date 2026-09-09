@@ -15,7 +15,7 @@
     "desktop:dev": "tauri dev",
     "desktop:build": "tauri build",
     "server:start": "node server/src/index.mjs",
-    "server:test:integration": "node server/tests/reset-integration-state.mjs && node server/tests/admin-auth.integration.mjs && node server/tests/applications-customers.integration.mjs && node server/tests/licenses.integration.mjs && node server/tests/devices.integration.mjs && node server/tests/public-license.integration.mjs",
+    "server:test:integration": "node server/tests/reset-integration-state.mjs && node server/tests/admin-auth.integration.mjs && node server/tests/applications-customers.integration.mjs && node server/tests/licenses.integration.mjs && node server/tests/devices.integration.mjs && node server/tests/public-license.integration.mjs && node server/tests/offline-license.integration.mjs",
     "admin:create-owner": "node server/scripts/create-owner.mjs",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",

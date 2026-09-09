@@ -93,6 +93,12 @@ pnpm server:start
 
 Xem `server/README.md` để biết auth endpoints, session model và role permissions.
 
+## Offline license signing
+
+Phase 7 dùng Ed25519 để server phát signed offline entitlement sau online `activate`, `validate` hoặc `heartbeat`. Private signing key chỉ tồn tại ở server; Desktop Apps chỉ embed public key và luôn bị giới hạn bởi `offline_valid_until`, kể cả license lifetime.
+
+Xem `docs/offline-license-v1.md` để biết token contract, key rotation, refresh/revoke behavior và chiến lược trusted server time chống clock rollback ở mức MVP.
+
 ## Build desktop
 
 ```powershell
@@ -108,6 +114,7 @@ src-tauri/src/        Native commands và desktop integration
 server/src/           Admin API server, auth, RBAC, PostgreSQL repository
 server/scripts/       Trusted server/bootstrap tooling
 server/tests/         Admin API integration tests
+docs/                 Security/contract documentation
 database/migrations/  Ordered PostgreSQL migrations
 database/tests/       Database schema/constraint tests
 scripts/database.mjs  Migration/test runner dùng psql
