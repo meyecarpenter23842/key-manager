@@ -11,6 +11,13 @@ export function createDatabasePool(databaseUrl) {
   });
 }
 
+function domainError(statusCode, errorCode, message) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  error.errorCode = errorCode;
+  return error;
+}
+
 async function insertAudit(
   client,
   {
@@ -28,6 +35,25 @@ async function insertAudit(
        actor_type, actor_admin_id, action, target_type, target_id, ip_address, request_id, metadata
      ) VALUES ('ADMIN', $1, $2, $3, $4, $5, $6, $7::jsonb)`,
     [actorAdminId, action, targetType, targetId, ipAddress, requestId, JSON.stringify(metadata)],
+  );
+}
+
+async function insertLicenseEvent(
+  client,
+  { licenseId, eventType, oldValue = null, newValue = null, actorAdminId, metadata = {} },
+) {
+  await client.query(
+    `INSERT INTO license_events (
+       license_id, event_type, old_value, new_value, actor_type, actor_admin_id, metadata
+     ) VALUES ($1, $2, $3::jsonb, $4::jsonb, 'ADMIN', $5, $6::jsonb)`,
+    [
+      licenseId,
+      eventType,
+      oldValue === null ? null : JSON.stringify(oldValue),
+      newValue === null ? null : JSON.stringify(newValue),
+      actorAdminId,
+      JSON.stringify(metadata),
+    ],
   );
 }
 
@@ -55,6 +81,67 @@ const CUSTOMER_SELECT = `
   note,
   created_at AS "createdAt",
   updated_at AS "updatedAt"`;
+
+const EFFECTIVE_LICENSE_STATUS = `(CASE
+  WHEN l.status = 'ACTIVE' AND l.license_type = 'SUBSCRIPTION' AND l.expires_at <= now()
+    THEN 'EXPIRED'::license_status
+  ELSE l.status
+END)`;
+
+const LICENSE_SELECT = `
+  l.id,
+  l.application_id AS "applicationId",
+  l.customer_id AS "customerId",
+  l.license_key_preview AS "licenseKeyPreview",
+  l.license_type AS "licenseType",
+  l.expires_at AS "expiresAt",
+  l.max_devices AS "maxDevices",
+  ${EFFECTIVE_LICENSE_STATUS} AS status,
+  l.note,
+  l.created_at AS "createdAt",
+  l.updated_at AS "updatedAt",
+  a.name AS "applicationName",
+  a.app_code AS "appCode",
+  c.name AS "customerName",
+  c.phone AS "customerPhone",
+  c.email AS "customerEmail",
+  c.company AS "customerCompany",
+  (SELECT count(*)::int FROM devices d WHERE d.license_id = l.id) AS "deviceCount",
+  (SELECT count(*)::int FROM devices d WHERE d.license_id = l.id AND d.status = 'ACTIVE') AS "activeDeviceCount"`;
+
+async function selectLicense(client, id, { forUpdate = false } = {}) {
+  const result = await client.query(
+    `SELECT ${LICENSE_SELECT}
+     FROM licenses l
+     JOIN applications a ON a.id = l.application_id
+     LEFT JOIN customers c ON c.id = l.customer_id
+     WHERE l.id = $1
+     ${forUpdate ? "FOR UPDATE OF l" : ""}`,
+    [id],
+  );
+  return result.rows[0] ?? null;
+}
+
+function eventLicenseValue(license) {
+  return {
+    licenseType: license.licenseType,
+    expiresAt: license.expiresAt,
+    maxDevices: license.maxDevices,
+    status: license.status,
+  };
+}
+
+function effectiveStatus(row, now = new Date()) {
+  if (
+    row.status === "ACTIVE" &&
+    row.license_type === "SUBSCRIPTION" &&
+    row.expires_at !== null &&
+    new Date(row.expires_at) <= now
+  ) {
+    return "EXPIRED";
+  }
+  return row.status;
+}
 
 export class AdminRepository {
   constructor(pool) {
@@ -178,12 +265,15 @@ export class AdminRepository {
         [email, passwordHash, role],
       );
       const admin = result.rows[0];
-      await client.query(
-        `INSERT INTO audit_logs (
-           actor_type, actor_admin_id, action, target_type, target_id, ip_address, request_id, metadata
-         ) VALUES ('ADMIN', $1, 'ADMIN_CREATED', 'ADMIN', $2, $3, $4, jsonb_build_object('role', $5::text))`,
-        [actorAdminId, admin.id, ipAddress, requestId, role],
-      );
+      await insertAudit(client, {
+        actorAdminId,
+        action: "ADMIN_CREATED",
+        targetType: "ADMIN",
+        targetId: admin.id,
+        ipAddress,
+        requestId,
+        metadata: { role },
+      });
       await client.query("COMMIT");
       return admin;
     } catch (error) {
@@ -202,9 +292,7 @@ export class AdminRepository {
       const existingOwner = await client.query(
         "SELECT id FROM admins WHERE role = 'OWNER' AND status = 'ACTIVE' LIMIT 1 FOR UPDATE",
       );
-      if (existingOwner.rowCount > 0) {
-        throw new Error("an active OWNER already exists");
-      }
+      if (existingOwner.rowCount > 0) throw new Error("an active OWNER already exists");
       const result = await client.query(
         `INSERT INTO admins (email, password_hash, role)
          VALUES ($1, $2, 'OWNER')
@@ -463,6 +551,492 @@ export class AdminRepository {
     }
   }
 
+  async listLicenses({
+    q = "",
+    qHash = null,
+    applicationId = null,
+    customerId = null,
+    licenseType = null,
+    status = null,
+    expiringWithinDays = null,
+    limit = 25,
+    offset = 0,
+  }) {
+    const where = `
+      WHERE (
+        $1 = ''
+        OR strpos(lower(l.license_key_preview), lower($1)) > 0
+        OR strpos(lower(a.name), lower($1)) > 0
+        OR strpos(lower(a.app_code), lower($1)) > 0
+        OR strpos(lower(coalesce(c.name, '')), lower($1)) > 0
+        OR strpos(lower(coalesce(c.phone, '')), lower($1)) > 0
+        OR strpos(lower(coalesce(c.email, '')), lower($1)) > 0
+        OR strpos(lower(coalesce(c.company, '')), lower($1)) > 0
+        OR ($7::bytea IS NOT NULL AND l.license_key_hash = $7::bytea)
+      )
+      AND ($2::uuid IS NULL OR l.application_id = $2::uuid)
+      AND ($3::uuid IS NULL OR l.customer_id = $3::uuid)
+      AND ($4::text IS NULL OR l.license_type::text = $4)
+      AND ($5::text IS NULL OR ${EFFECTIVE_LICENSE_STATUS}::text = $5)
+      AND (
+        $6::int IS NULL
+        OR (
+          l.status = 'ACTIVE'
+          AND l.license_type = 'SUBSCRIPTION'
+          AND l.expires_at > now()
+          AND l.expires_at <= now() + ($6::int * interval '1 day')
+        )
+      )`;
+    const params = [
+      q,
+      applicationId,
+      customerId,
+      licenseType,
+      status,
+      expiringWithinDays,
+      qHash,
+    ];
+    const from = `FROM licenses l
+      JOIN applications a ON a.id = l.application_id
+      LEFT JOIN customers c ON c.id = l.customer_id`;
+    const [countResult, rowsResult] = await Promise.all([
+      this.pool.query(`SELECT count(*)::int AS total ${from} ${where}`, params),
+      this.pool.query(
+        `SELECT ${LICENSE_SELECT}
+         ${from}
+         ${where}
+         ORDER BY l.updated_at DESC, l.created_at DESC
+         LIMIT $8 OFFSET $9`,
+        [...params, limit, offset],
+      ),
+    ]);
+    return { items: rowsResult.rows, total: countResult.rows[0].total, limit, offset };
+  }
+
+  async getLicenseById(id) {
+    return selectLicense(this.pool, id);
+  }
+
+  async getLicenseDetail(id) {
+    const license = await this.getLicenseById(id);
+    if (!license) return null;
+    const [deviceResult, eventResult] = await Promise.all([
+      this.pool.query(
+        `SELECT
+           id,
+           device_id AS "deviceId",
+           device_name AS "deviceName",
+           os,
+           app_version AS "appVersion",
+           status,
+           activated_at AS "activatedAt",
+           last_seen_at AS "lastSeenAt",
+           revoked_at AS "revokedAt"
+         FROM devices
+         WHERE license_id = $1
+         ORDER BY activated_at DESC`,
+        [id],
+      ),
+      this.pool.query(
+        `SELECT
+           e.id,
+           e.event_type AS "eventType",
+           e.old_value AS "oldValue",
+           e.new_value AS "newValue",
+           e.actor_type AS "actorType",
+           e.actor_admin_id AS "actorAdminId",
+           a.email AS "actorEmail",
+           e.metadata,
+           e.created_at AS "createdAt"
+         FROM license_events e
+         LEFT JOIN admins a ON a.id = e.actor_admin_id
+         WHERE e.license_id = $1
+         ORDER BY e.created_at DESC`,
+        [id],
+      ),
+    ]);
+    return {
+      ...license,
+      application: {
+        id: license.applicationId,
+        name: license.applicationName,
+        appCode: license.appCode,
+      },
+      customer: license.customerId
+        ? {
+            id: license.customerId,
+            name: license.customerName,
+            phone: license.customerPhone,
+            email: license.customerEmail,
+            company: license.customerCompany,
+          }
+        : null,
+      devices: deviceResult.rows,
+      events: eventResult.rows,
+    };
+  }
+
+  async createLicense({ data, keyHash, keyPreview, actorAdminId, requestId, ipAddress }) {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const appResult = await client.query(
+        `SELECT id, app_code, status, default_device_limit, default_duration_days, allow_lifetime
+         FROM applications
+         WHERE id = $1
+         FOR SHARE`,
+        [data.applicationId],
+      );
+      if (appResult.rowCount === 0) {
+        throw domainError(404, "APPLICATION_NOT_FOUND", "Application not found");
+      }
+      const application = appResult.rows[0];
+      if (application.status !== "ACTIVE") {
+        throw domainError(409, "APPLICATION_DISABLED", "Cannot create a license for a disabled application");
+      }
+      if (data.licenseType === "LIFETIME" && !application.allow_lifetime) {
+        throw domainError(409, "LIFETIME_NOT_ALLOWED", "Lifetime licenses are disabled for this application");
+      }
+      if (data.customerId !== null) {
+        const customerResult = await client.query("SELECT id FROM customers WHERE id = $1", [
+          data.customerId,
+        ]);
+        if (customerResult.rowCount === 0) {
+          throw domainError(404, "CUSTOMER_NOT_FOUND", "Customer not found");
+        }
+      }
+
+      const maxDevices = data.maxDevices ?? application.default_device_limit;
+      const durationDays =
+        data.licenseType === "SUBSCRIPTION"
+          ? (data.durationDays ?? application.default_duration_days)
+          : null;
+      const insertResult = await client.query(
+        `INSERT INTO licenses (
+           application_id, customer_id, license_key_hash, license_key_preview,
+           license_type, expires_at, max_devices, status, note, created_by_admin_id
+         ) VALUES (
+           $1, $2, $3, $4, $5,
+           CASE WHEN $5::license_type = 'SUBSCRIPTION'
+             THEN now() + make_interval(days => $6::int)
+             ELSE NULL
+           END,
+           $7, 'ACTIVE', $8, $9
+         )
+         RETURNING id`,
+        [
+          data.applicationId,
+          data.customerId,
+          keyHash,
+          keyPreview,
+          data.licenseType,
+          durationDays,
+          maxDevices,
+          data.note,
+          actorAdminId,
+        ],
+      );
+      const license = await selectLicense(client, insertResult.rows[0].id);
+      await insertLicenseEvent(client, {
+        licenseId: license.id,
+        eventType: "LICENSE_CREATED",
+        newValue: eventLicenseValue(license),
+        actorAdminId,
+        metadata: {
+          applicationId: data.applicationId,
+          customerId: data.customerId,
+        },
+      });
+      await insertAudit(client, {
+        actorAdminId,
+        action: "LICENSE_CREATED",
+        targetType: "LICENSE",
+        targetId: license.id,
+        ipAddress,
+        requestId,
+        metadata: {
+          applicationId: data.applicationId,
+          customerId: data.customerId,
+          licenseType: license.licenseType,
+          maxDevices: license.maxDevices,
+        },
+      });
+      await client.query("COMMIT");
+      return license;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async renewLicense({ id, renewal, actorAdminId, requestId, ipAddress }) {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const beforeResult = await client.query(
+        `SELECT l.id, l.license_type, l.expires_at, l.status, a.allow_lifetime
+         FROM licenses l
+         JOIN applications a ON a.id = l.application_id
+         WHERE l.id = $1
+         FOR UPDATE OF l`,
+        [id],
+      );
+      if (beforeResult.rowCount === 0) {
+        await client.query("ROLLBACK");
+        return null;
+      }
+      const beforeRow = beforeResult.rows[0];
+      const beforeStatus = effectiveStatus(beforeRow);
+      if (beforeStatus === "ARCHIVED") {
+        throw domainError(409, "LICENSE_ARCHIVED", "Archived licenses cannot be renewed");
+      }
+
+      const oldValue = {
+        licenseType: beforeRow.license_type,
+        expiresAt: beforeRow.expires_at,
+        status: beforeStatus,
+      };
+      let eventType;
+      let metadata;
+
+      if (renewal.toLifetime) {
+        if (beforeRow.license_type === "LIFETIME") {
+          throw domainError(409, "ALREADY_LIFETIME", "License is already lifetime");
+        }
+        if (!beforeRow.allow_lifetime) {
+          throw domainError(409, "LIFETIME_NOT_ALLOWED", "Lifetime licenses are disabled for this application");
+        }
+        await client.query(
+          `UPDATE licenses
+           SET license_type = 'LIFETIME',
+               expires_at = NULL,
+               status = CASE WHEN status = 'REVOKED' THEN 'REVOKED'::license_status ELSE 'ACTIVE'::license_status END
+           WHERE id = $1`,
+          [id],
+        );
+        eventType = "LICENSE_CHANGED_TO_LIFETIME";
+        metadata = {};
+      } else {
+        if (beforeRow.license_type !== "SUBSCRIPTION") {
+          throw domainError(409, "LIFETIME_CANNOT_RENEW", "Lifetime licenses do not have an expiry to renew");
+        }
+        await client.query(
+          `UPDATE licenses
+           SET expires_at = (CASE WHEN expires_at > now() THEN expires_at ELSE now() END)
+             + make_interval(days => $2::int),
+               status = CASE WHEN status = 'REVOKED' THEN 'REVOKED'::license_status ELSE 'ACTIVE'::license_status END
+           WHERE id = $1`,
+          [id, renewal.durationDays],
+        );
+        eventType = "LICENSE_RENEWED";
+        metadata = { durationDays: renewal.durationDays };
+      }
+
+      const license = await selectLicense(client, id);
+      await insertLicenseEvent(client, {
+        licenseId: id,
+        eventType,
+        oldValue,
+        newValue: eventLicenseValue(license),
+        actorAdminId,
+        metadata,
+      });
+      await insertAudit(client, {
+        actorAdminId,
+        action: eventType,
+        targetType: "LICENSE",
+        targetId: id,
+        ipAddress,
+        requestId,
+        metadata,
+      });
+      await client.query("COMMIT");
+      return license;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async revokeLicense({ id, actorAdminId, requestId, ipAddress }) {
+    return this.#changeLicenseStatus({
+      id,
+      action: "revoke",
+      actorAdminId,
+      requestId,
+      ipAddress,
+    });
+  }
+
+  async reactivateLicense({ id, actorAdminId, requestId, ipAddress }) {
+    return this.#changeLicenseStatus({
+      id,
+      action: "reactivate",
+      actorAdminId,
+      requestId,
+      ipAddress,
+    });
+  }
+
+  async archiveLicense({ id, actorAdminId, requestId, ipAddress }) {
+    return this.#changeLicenseStatus({
+      id,
+      action: "archive",
+      actorAdminId,
+      requestId,
+      ipAddress,
+    });
+  }
+
+  async #changeLicenseStatus({ id, action, actorAdminId, requestId, ipAddress }) {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const rowResult = await client.query(
+        `SELECT id, license_type, expires_at, status
+         FROM licenses
+         WHERE id = $1
+         FOR UPDATE`,
+        [id],
+      );
+      if (rowResult.rowCount === 0) {
+        await client.query("ROLLBACK");
+        return null;
+      }
+      const row = rowResult.rows[0];
+      const oldStatus = effectiveStatus(row);
+      let newStatus;
+      let eventType;
+
+      if (action === "revoke") {
+        if (oldStatus === "ARCHIVED") {
+          throw domainError(409, "LICENSE_ARCHIVED", "Archived licenses cannot be revoked");
+        }
+        if (oldStatus === "REVOKED") {
+          const license = await selectLicense(client, id);
+          await client.query("COMMIT");
+          return license;
+        }
+        newStatus = "REVOKED";
+        eventType = "LICENSE_REVOKED";
+      } else if (action === "reactivate") {
+        if (row.status !== "REVOKED") {
+          throw domainError(409, "LICENSE_NOT_REVOKED", "Only revoked licenses can be reactivated");
+        }
+        newStatus =
+          row.license_type === "SUBSCRIPTION" && new Date(row.expires_at) <= new Date()
+            ? "EXPIRED"
+            : "ACTIVE";
+        eventType = "LICENSE_REACTIVATED";
+      } else {
+        if (oldStatus === "ARCHIVED") {
+          const license = await selectLicense(client, id);
+          await client.query("COMMIT");
+          return license;
+        }
+        newStatus = "ARCHIVED";
+        eventType = "LICENSE_ARCHIVED";
+      }
+
+      await client.query("UPDATE licenses SET status = $2 WHERE id = $1", [id, newStatus]);
+      const license = await selectLicense(client, id);
+      await insertLicenseEvent(client, {
+        licenseId: id,
+        eventType,
+        oldValue: { status: oldStatus },
+        newValue: { status: license.status },
+        actorAdminId,
+      });
+      await insertAudit(client, {
+        actorAdminId,
+        action: eventType,
+        targetType: "LICENSE",
+        targetId: id,
+        ipAddress,
+        requestId,
+      });
+      await client.query("COMMIT");
+      return license;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async updateLicenseDeviceLimit({ id, maxDevices, actorAdminId, requestId, ipAddress }) {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const licenseResult = await client.query(
+        `SELECT id, max_devices, status
+         FROM licenses
+         WHERE id = $1
+         FOR UPDATE`,
+        [id],
+      );
+      if (licenseResult.rowCount === 0) {
+        await client.query("ROLLBACK");
+        return null;
+      }
+      const row = licenseResult.rows[0];
+      if (row.status === "ARCHIVED") {
+        throw domainError(409, "LICENSE_ARCHIVED", "Archived licenses cannot change device limit");
+      }
+      const deviceCountResult = await client.query(
+        `SELECT count(*)::int AS count
+         FROM devices
+         WHERE license_id = $1 AND status = 'ACTIVE'`,
+        [id],
+      );
+      const activeDeviceCount = deviceCountResult.rows[0].count;
+      if (maxDevices < activeDeviceCount) {
+        throw domainError(
+          409,
+          "DEVICE_LIMIT_BELOW_ACTIVE_COUNT",
+          "maxDevices cannot be lower than the active device count",
+        );
+      }
+      if (row.max_devices === maxDevices) {
+        const license = await selectLicense(client, id);
+        await client.query("COMMIT");
+        return license;
+      }
+
+      await client.query("UPDATE licenses SET max_devices = $2 WHERE id = $1", [id, maxDevices]);
+      const license = await selectLicense(client, id);
+      await insertLicenseEvent(client, {
+        licenseId: id,
+        eventType: "DEVICE_LIMIT_CHANGED",
+        oldValue: { maxDevices: row.max_devices },
+        newValue: { maxDevices: license.maxDevices },
+        actorAdminId,
+        metadata: { activeDeviceCount },
+      });
+      await insertAudit(client, {
+        actorAdminId,
+        action: "DEVICE_LIMIT_CHANGED",
+        targetType: "LICENSE",
+        targetId: id,
+        ipAddress,
+        requestId,
+        metadata: { activeDeviceCount, oldMaxDevices: row.max_devices, maxDevices },
+      });
+      await client.query("COMMIT");
+      return license;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async getCustomerDetail(id) {
     const customer = await this.getCustomerById(id);
     if (!customer) return null;
@@ -475,7 +1049,7 @@ export class AdminRepository {
            l.license_type AS "licenseType",
            l.expires_at AS "expiresAt",
            l.max_devices AS "maxDevices",
-           l.status,
+           ${EFFECTIVE_LICENSE_STATUS} AS status,
            l.note,
            l.created_at AS "createdAt",
            l.updated_at AS "updatedAt",
