@@ -5,6 +5,16 @@ import { URL } from "node:url";
 
 import { PERMISSIONS, hasPermission, isAdminRole } from "./rbac.mjs";
 import {
+  isUuid,
+  normalizeApplicationCreate,
+  normalizeApplicationPatch,
+  normalizeCustomerCreate,
+  normalizeCustomerPatch,
+  parseApplicationStatusFilter,
+  parsePagination,
+  parseSearch,
+} from "./resources.mjs";
+import {
   DUMMY_PASSWORD_HASH,
   createSessionToken,
   hashPassword,
@@ -16,7 +26,9 @@ import {
 } from "./security.mjs";
 
 const MAX_JSON_BODY_BYTES = 16 * 1024;
-const INVALID_CREDENTIALS = { error: { code: "INVALID_CREDENTIALS", message: "Invalid credentials" } };
+const INVALID_CREDENTIALS = {
+  error: { code: "INVALID_CREDENTIALS", message: "Invalid credentials" },
+};
 
 function writeJson(response, statusCode, payload, headers = {}) {
   const body = payload === null ? "" : JSON.stringify(payload);
@@ -88,8 +100,33 @@ function corsHeaders(request, allowedOrigins) {
     "access-control-allow-origin": origin,
     vary: "Origin",
     "access-control-allow-headers": "authorization, content-type, x-request-id",
-    "access-control-allow-methods": "GET, POST, OPTIONS",
+    "access-control-allow-methods": "GET, POST, PATCH, OPTIONS",
   };
+}
+
+function requirePermission(response, headers, session, permission) {
+  if (hasPermission(session.role, permission)) return true;
+  writeJson(
+    response,
+    403,
+    { error: { code: "FORBIDDEN", message: "Insufficient permission" } },
+    headers,
+  );
+  return false;
+}
+
+function writeResourceNotFound(response, headers, resource) {
+  writeJson(
+    response,
+    404,
+    { error: { code: "RESOURCE_NOT_FOUND", message: `${resource} not found` } },
+    headers,
+  );
+}
+
+function pathId(pathname, prefix) {
+  const match = new RegExp(`^${prefix}/([^/]+)$`).exec(pathname);
+  return match?.[1] ?? null;
 }
 
 export function createAdminApiServer({ repository, sessionTtlHours = 12, allowedOrigins = [] }) {
@@ -194,30 +231,14 @@ export function createAdminApiServer({ repository, sessionTtlHours = 12, allowed
         }
 
         if (request.method === "GET" && url.pathname === "/api/admin/v1/admins") {
-          if (!hasPermission(session.role, PERMISSIONS.ADMIN_READ)) {
-            writeJson(
-              response,
-              403,
-              { error: { code: "FORBIDDEN", message: "Insufficient permission" } },
-              commonHeaders,
-            );
-            return;
-          }
+          if (!requirePermission(response, commonHeaders, session, PERMISSIONS.ADMIN_READ)) return;
           const admins = await repository.listAdmins();
           writeJson(response, 200, { admins }, commonHeaders);
           return;
         }
 
         if (request.method === "POST" && url.pathname === "/api/admin/v1/admins") {
-          if (!hasPermission(session.role, PERMISSIONS.ADMIN_WRITE)) {
-            writeJson(
-              response,
-              403,
-              { error: { code: "FORBIDDEN", message: "Insufficient permission" } },
-              commonHeaders,
-            );
-            return;
-          }
+          if (!requirePermission(response, commonHeaders, session, PERMISSIONS.ADMIN_WRITE)) return;
 
           const body = await readJson(request);
           const email = normalizeEmail(body.email);
@@ -243,6 +264,139 @@ export function createAdminApiServer({ repository, sessionTtlHours = 12, allowed
           });
           writeJson(response, 201, { admin }, commonHeaders);
           return;
+        }
+
+        if (request.method === "GET" && url.pathname === "/api/admin/v1/applications") {
+          if (!requirePermission(response, commonHeaders, session, PERMISSIONS.APPLICATION_READ)) return;
+          const { limit, offset } = parsePagination(url);
+          const q = parseSearch(url);
+          const status = parseApplicationStatusFilter(url);
+          const result = await repository.listApplications({ q, status, limit, offset });
+          writeJson(
+            response,
+            200,
+            {
+              applications: result.items,
+              pagination: { total: result.total, limit: result.limit, offset: result.offset },
+            },
+            commonHeaders,
+          );
+          return;
+        }
+
+        if (request.method === "POST" && url.pathname === "/api/admin/v1/applications") {
+          if (!requirePermission(response, commonHeaders, session, PERMISSIONS.APPLICATION_WRITE)) return;
+          const data = normalizeApplicationCreate(await readJson(request));
+          const application = await repository.createApplication({
+            data,
+            actorAdminId: session.admin_id,
+            requestId,
+            ipAddress: clientIp(request),
+          });
+          writeJson(response, 201, { application }, commonHeaders);
+          return;
+        }
+
+        const applicationId = pathId(url.pathname, "/api/admin/v1/applications");
+        if (applicationId !== null) {
+          if (!isUuid(applicationId)) {
+            const error = new Error("application id must be a UUID");
+            error.statusCode = 400;
+            throw error;
+          }
+          if (request.method === "GET") {
+            if (!requirePermission(response, commonHeaders, session, PERMISSIONS.APPLICATION_READ)) return;
+            const application = await repository.getApplicationById(applicationId);
+            if (!application) {
+              writeResourceNotFound(response, commonHeaders, "Application");
+              return;
+            }
+            writeJson(response, 200, { application }, commonHeaders);
+            return;
+          }
+          if (request.method === "PATCH") {
+            if (!requirePermission(response, commonHeaders, session, PERMISSIONS.APPLICATION_WRITE)) return;
+            const patch = normalizeApplicationPatch(await readJson(request));
+            const application = await repository.updateApplication({
+              id: applicationId,
+              patch,
+              actorAdminId: session.admin_id,
+              requestId,
+              ipAddress: clientIp(request),
+            });
+            if (!application) {
+              writeResourceNotFound(response, commonHeaders, "Application");
+              return;
+            }
+            writeJson(response, 200, { application }, commonHeaders);
+            return;
+          }
+        }
+
+        if (request.method === "GET" && url.pathname === "/api/admin/v1/customers") {
+          if (!requirePermission(response, commonHeaders, session, PERMISSIONS.CUSTOMER_READ)) return;
+          const { limit, offset } = parsePagination(url);
+          const q = parseSearch(url);
+          const result = await repository.listCustomers({ q, limit, offset });
+          writeJson(
+            response,
+            200,
+            {
+              customers: result.items,
+              pagination: { total: result.total, limit: result.limit, offset: result.offset },
+            },
+            commonHeaders,
+          );
+          return;
+        }
+
+        if (request.method === "POST" && url.pathname === "/api/admin/v1/customers") {
+          if (!requirePermission(response, commonHeaders, session, PERMISSIONS.CUSTOMER_WRITE)) return;
+          const data = normalizeCustomerCreate(await readJson(request));
+          const customer = await repository.createCustomer({
+            data,
+            actorAdminId: session.admin_id,
+            requestId,
+            ipAddress: clientIp(request),
+          });
+          writeJson(response, 201, { customer }, commonHeaders);
+          return;
+        }
+
+        const customerId = pathId(url.pathname, "/api/admin/v1/customers");
+        if (customerId !== null) {
+          if (!isUuid(customerId)) {
+            const error = new Error("customer id must be a UUID");
+            error.statusCode = 400;
+            throw error;
+          }
+          if (request.method === "GET") {
+            if (!requirePermission(response, commonHeaders, session, PERMISSIONS.CUSTOMER_READ)) return;
+            const customer = await repository.getCustomerDetail(customerId);
+            if (!customer) {
+              writeResourceNotFound(response, commonHeaders, "Customer");
+              return;
+            }
+            writeJson(response, 200, { customer }, commonHeaders);
+            return;
+          }
+          if (request.method === "PATCH") {
+            if (!requirePermission(response, commonHeaders, session, PERMISSIONS.CUSTOMER_WRITE)) return;
+            const patch = normalizeCustomerPatch(await readJson(request));
+            const customer = await repository.updateCustomer({
+              id: customerId,
+              patch,
+              actorAdminId: session.admin_id,
+              requestId,
+              ipAddress: clientIp(request),
+            });
+            if (!customer) {
+              writeResourceNotFound(response, commonHeaders, "Customer");
+              return;
+            }
+            writeJson(response, 200, { customer }, commonHeaders);
+            return;
+          }
         }
       }
 
