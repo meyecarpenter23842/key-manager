@@ -1,4 +1,4 @@
-# Admin API authentication and RBAC
+# Admin API
 
 The Admin API is server infrastructure. It is not bundled into the Tauri desktop app and it is the only component allowed to receive `DATABASE_URL`.
 
@@ -10,8 +10,9 @@ The Admin API is server infrastructure. It is not bundled into the Tauri desktop
 - A disabled admin cannot authenticate even when an unexpired session row still exists.
 - Every `/api/admin/v1/*` route except login authenticates the session on the server.
 - RBAC is enforced in the API, not by hiding desktop buttons.
-- OWNER can manage admin accounts. ADMIN can manage applications/licenses/customers/devices but not admin accounts. STAFF can view, create and renew licenses but cannot revoke/archive licenses or manage admins.
-- Login success/failure, logout, owner bootstrap and admin creation are written to `audit_logs`.
+- OWNER can manage admin accounts. ADMIN can manage applications/licenses/customers/devices but not admin accounts. STAFF can read applications and can read/write customers; destructive license/application management remains restricted by policy.
+- Important auth, application and customer changes are written to `audit_logs`.
+- License detail data exposed through customer detail never includes `license_key_hash`; only the non-secret `licenseKeyPreview` is returned.
 
 ## Local setup
 
@@ -47,12 +48,30 @@ Invoke-RestMethod http://127.0.0.1:3001/health
 
 For production, terminate TLS at a trusted reverse proxy/load balancer or equivalent HTTPS endpoint before exposing the Admin API. Do not expose this plain HTTP listener directly to the internet.
 
-## Auth endpoints
+## Auth/admin endpoints
 
 - `POST /api/admin/v1/auth/login`
 - `GET /api/admin/v1/auth/me`
 - `POST /api/admin/v1/auth/logout`
 - `GET /api/admin/v1/admins` — OWNER only
 - `POST /api/admin/v1/admins` — OWNER only
+
+## Applications
+
+- `GET /api/admin/v1/applications?q=&status=&limit=&offset=` — OWNER/ADMIN/STAFF
+- `POST /api/admin/v1/applications` — OWNER/ADMIN
+- `GET /api/admin/v1/applications/:id` — OWNER/ADMIN/STAFF
+- `PATCH /api/admin/v1/applications/:id` — OWNER/ADMIN
+
+Application create/update supports `name`, `appCode`, `description`, `currentVersion`, `minimumVersion`, `status`, `offlineGraceSeconds`, `defaultDeviceLimit`, `defaultDurationDays`, and `allowLifetime`. `appCode` is normalized to uppercase and remains protected by the database unique constraint.
+
+## Customers
+
+- `GET /api/admin/v1/customers?q=&limit=&offset=` — OWNER/ADMIN/STAFF
+- `POST /api/admin/v1/customers` — OWNER/ADMIN/STAFF
+- `GET /api/admin/v1/customers/:id` — OWNER/ADMIN/STAFF
+- `PATCH /api/admin/v1/customers/:id` — OWNER/ADMIN/STAFF
+
+Customer search covers name, phone, email and company. Customer detail includes associated licenses, application identity, device rows/counts, expiry/status and renewal history events already stored in `license_events`.
 
 The desktop app may receive only the public Admin API URL plus an authenticated session token. Database credentials and future private signing keys stay on the server.

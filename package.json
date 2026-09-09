@@ -15,7 +15,7 @@
     "desktop:dev": "tauri dev",
     "desktop:build": "tauri build",
     "server:start": "node server/src/index.mjs",
-    "server:test:integration": "node server/tests/admin-auth.integration.mjs",
+    "server:test:integration": "node server/tests/admin-auth.integration.mjs && node server/tests/applications-customers.integration.mjs",
     "admin:create-owner": "node server/scripts/create-owner.mjs",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
