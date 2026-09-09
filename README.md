@@ -41,14 +41,41 @@ winget install --id Rustlang.Rustup
 rustup default stable-msvc
 ```
 
-## Chạy desktop app
+## Chạy Admin Desktop UI local
+
+Admin UI Phase 8 gọi **Admin API thật**, không dùng mock data và không truy cập PostgreSQL trực tiếp. Vì vậy cần chạy backend và desktop ở hai terminal.
+
+Terminal 1 — Admin API:
 
 ```powershell
-pnpm install
+cd F:\1_A_Disk_D\key-manager
+$env:DATABASE_URL="postgresql://postgres:postgres@localhost:5432/key_manager_dev"
+$env:ADMIN_API_ALLOWED_ORIGINS="http://localhost:1420"
+pnpm server:start
+```
+
+Terminal 2 — Tauri desktop:
+
+```powershell
+cd F:\1_A_Disk_D\key-manager
+$env:VITE_ADMIN_API_URL="http://127.0.0.1:3001"
 pnpm tauri dev
 ```
 
-Lệnh trên phải mở cửa sổ native **Key Manager**.
+Lệnh trên mở cửa sổ native **Key Manager** với login, dashboard, Applications, Customers, Licenses, Devices và quản trị admin theo RBAC. Session token chỉ được giữ trong session storage của WebView; server vẫn là nơi enforce authentication và permission.
+
+Nếu database phát triển chưa có OWNER, bootstrap một lần trước khi login:
+
+```powershell
+$env:DATABASE_URL="postgresql://postgres:postgres@localhost:5432/key_manager_dev"
+$env:KEY_MANAGER_OWNER_EMAIL="owner@example.com"
+$env:KEY_MANAGER_OWNER_PASSWORD="replace-with-a-long-password"
+pnpm admin:create-owner
+Remove-Item Env:KEY_MANAGER_OWNER_EMAIL
+Remove-Item Env:KEY_MANAGER_OWNER_PASSWORD
+```
+
+`admin:create-owner` chỉ dùng để bootstrap OWNER đầu tiên; không chạy lại nếu đã có active OWNER.
 
 ## Quality checks
 
@@ -79,19 +106,23 @@ Xem `database/README.md` để biết quy tắc migration forward-only/checksum.
 
 ## Admin API authentication / RBAC
 
-Phase 2 backend nằm trong `server/`. Admin API giữ database credential và thực thi authentication/RBAC ở server; Desktop App chỉ được gọi API qua HTTPS.
-
-```powershell
-$env:DATABASE_URL="postgresql://postgres:postgres@localhost:5432/key_manager_dev"
-$env:KEY_MANAGER_OWNER_EMAIL="owner@example.com"
-$env:KEY_MANAGER_OWNER_PASSWORD="replace-with-a-long-password"
-pnpm admin:create-owner
-Remove-Item Env:KEY_MANAGER_OWNER_EMAIL
-Remove-Item Env:KEY_MANAGER_OWNER_PASSWORD
-pnpm server:start
-```
+Admin API giữ database credential và thực thi authentication/RBAC ở server; Desktop App chỉ được gọi API qua HTTP(S). Local development dùng `http://127.0.0.1:3001`; production phải dùng endpoint HTTPS tin cậy và CORS origin rõ ràng.
 
 Xem `server/README.md` để biết auth endpoints, session model và role permissions.
+
+## Admin Desktop UI
+
+UI quản trị được thiết kế desktop-first và nối trực tiếp vào các contract đã có:
+
+- Dashboard tổng quan applications, customers, licenses và devices.
+- Applications: tạo/sửa app code, version, offline grace, device/duration defaults và lifetime policy.
+- Customers: tìm kiếm, tạo và sửa hồ sơ.
+- Licenses: tìm/filter, tạo key, copy raw key đúng một lần, xem lịch sử, gia hạn, chuyển lifetime, revoke/reactivate/archive và đổi device limit.
+- Devices: tìm/filter trạng thái và revoke theo quyền.
+- Admin team: OWNER có thể xem và tạo tài khoản theo role.
+- API error hiển thị error code và `requestId` để đối chiếu log.
+
+Frontend chỉ ẩn/hiện action theo role để UX rõ hơn; **RBAC quyết định cuối cùng luôn ở Admin API**.
 
 ## Offline license signing
 
@@ -105,10 +136,12 @@ Xem `docs/offline-license-v1.md` để biết token contract, key rotation, refr
 pnpm tauri build
 ```
 
+Khi build/deploy production, đặt `VITE_ADMIN_API_URL` thành Admin API HTTPS public trước bước frontend build. Không đưa `DATABASE_URL`, signing private key hoặc secret backend vào `VITE_*`.
+
 ## Cấu trúc
 
 ```text
-src/                  React desktop UI
+src/                  React desktop Admin UI + API client
 src-tauri/            Tauri/Rust native shell
 src-tauri/src/        Native commands và desktop integration
 server/src/           Admin API server, auth, RBAC, PostgreSQL repository
@@ -128,8 +161,9 @@ tests/                Unit/frontend tests
 - Không đưa license signing private key vào desktop app.
 - Không để Desktop App truy cập PostgreSQL/Supabase trực tiếp.
 - Public License API và Admin API là backend online riêng.
-- UI desktop chỉ gọi Admin API qua HTTPS.
+- UI desktop chỉ gọi Admin API qua HTTPS ở production.
 - Authentication và RBAC được enforce ở Admin API, không tin quyền do UI gửi lên.
+- Raw license key chỉ tồn tại trong response tạo key và state tạm thời của màn hình copy một lần; không persist vào storage.
 - `VITE_*` chỉ được dùng cho dữ liệu public/config không nhạy cảm.
 - `DATABASE_URL`/`PG*` chỉ dành cho migration tooling hoặc backend trusted environment, không được đổi thành biến `VITE_*`.
 

@@ -1,0 +1,33 @@
+/* Toast & spinner */
+.toast-stack { position: fixed; z-index: 80; right: 20px; bottom: 20px; width: min(360px, calc(100vw - 40px)); display: grid; gap: 8px; pointer-events: none; }
+.toast { pointer-events: auto; display: grid; grid-template-columns: 20px minmax(0,1fr) 24px; gap: 9px; align-items: start; padding: 11px 11px; border-radius: 11px; background: #fff; border: 1px solid #e1e4e9; box-shadow: 0 14px 40px rgba(22,27,38,.16); animation: toastIn .18s ease-out; }
+@keyframes toastIn { from { opacity: 0; transform: translateY(8px); } }
+.toast-success > svg { color: #16945d; }
+.toast-danger > svg { color: #cf4555; }
+.toast div { display: grid; gap: 3px; }
+.toast strong { font-size: 10.5px; }
+.toast small { font-size: 8.5px; color: #9299a7; line-height: 1.35; word-break: break-word; }
+.toast button { border: 0; background: transparent; color: #9ca3ae; width: 24px; height: 24px; display: grid; place-items: center; cursor: pointer; padding: 0; }
+.spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,.42); border-top-color: #fff; border-radius: 50%; animation: spin .65s linear infinite; }
+.spinner.dark { border-color: #e0dcf8; border-top-color: #745ae8; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 1180px) {
+  .admin-shell { grid-template-columns: 78px minmax(0,1fr); }
+  .sidebar { align-items: stretch; }
+  .sidebar-brand > div:last-child, .sidebar nav button span, .sidebar nav button i, .api-status-card div, .collapse-button span { display: none; }
+  .sidebar-brand { min-width: 0; padding-left: 6px; }
+  .sidebar nav button { min-width: 0; width: 50px; justify-content: center; padding: 0; }
+  .api-status-card, .collapse-button { min-width: 0; width: 50px; justify-content: center; }
+  .stat-grid { grid-template-columns: repeat(2,1fr); }
+  .form-grid.three { grid-template-columns: 1fr 1fr; }
+}
+
+@media (max-width: 900px) {
+  body { overflow: auto; }
+  .login-shell { grid-template-columns: 1fr; }
+  .login-brand { display: none; }
+  .login-panel { min-height: 100vh; border-radius: 0; padding: 30px; }
+  .mobile-brand { display: inline-flex; align-items: center; gap: 7px; color: #6b53de; font-weight: 800; margin-bottom: 36px; }
+  .admin-shell { min-width: 900px; }
+}
