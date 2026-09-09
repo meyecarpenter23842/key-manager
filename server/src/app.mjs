@@ -5,6 +5,8 @@ import { URL } from "node:url";
 
 import { DeviceRepository } from "./device-repository.mjs";
 import { parseDeviceFilters } from "./devices.mjs";
+import { LicenseApiRepository } from "./license-api-repository.mjs";
+import { PublicLicenseService } from "./license-service.mjs";
 import {
   generateLicenseKey,
   hashLicenseKey,
@@ -14,6 +16,13 @@ import {
   normalizeLicenseRenew,
   parseLicenseFilters,
 } from "./licenses.mjs";
+import {
+  normalizeActivation,
+  normalizeDeactivation,
+  normalizeHeartbeat,
+  normalizeValidation,
+} from "./public-license.mjs";
+import { createRateLimiter } from "./rate-limit.mjs";
 import { PERMISSIONS, hasPermission, isAdminRole } from "./rbac.mjs";
 import {
   isUuid,
@@ -40,6 +49,12 @@ const MAX_JSON_BODY_BYTES = 16 * 1024;
 const INVALID_CREDENTIALS = {
   error: { code: "INVALID_CREDENTIALS", message: "Invalid credentials" },
 };
+const PUBLIC_LICENSE_ACTIONS = new Map([
+  ["/api/v1/license/activate", "activate"],
+  ["/api/v1/license/validate", "validate"],
+  ["/api/v1/license/heartbeat", "heartbeat"],
+  ["/api/v1/license/deactivate", "deactivate"],
+]);
 
 function writeJson(response, statusCode, payload, headers = {}) {
   const body = payload === null ? "" : JSON.stringify(payload);
@@ -154,13 +169,52 @@ function devicePath(pathname) {
   return { id: match[1], action: match[2] ?? null };
 }
 
+function normalizePublicPayload(action, body) {
+  switch (action) {
+    case "activate":
+      return normalizeActivation(body);
+    case "validate":
+      return normalizeValidation(body);
+    case "heartbeat":
+      return normalizeHeartbeat(body);
+    case "deactivate":
+      return normalizeDeactivation(body);
+    default:
+      throw new Error("Unknown public license action");
+  }
+}
+
+function safeStructuredLog(logger, event) {
+  if (typeof logger !== "function") return;
+  try {
+    logger(event);
+  } catch {
+    // Logging must never alter an API response.
+  }
+}
+
 export function createAdminApiServer({
   repository,
   deviceRepository = null,
+  licenseApiRepository = null,
+  licenseService = null,
+  publicRateLimiter = null,
+  publicRateLimitMax = 120,
+  publicRateLimitWindowMs = 60_000,
+  logger = null,
   sessionTtlHours = 12,
   allowedOrigins = [],
 }) {
   const devices = deviceRepository ?? new DeviceRepository(repository.pool);
+  const publicLicenses =
+    licenseService ??
+    new PublicLicenseService({
+      licenseRepository: licenseApiRepository ?? new LicenseApiRepository(repository.pool),
+      deviceRepository: devices,
+    });
+  const rateLimiter =
+    publicRateLimiter ??
+    createRateLimiter({ maxRequests: publicRateLimitMax, windowMs: publicRateLimitWindowMs });
 
   return createServer(async (request, response) => {
     const requestIdHeader = request.headers["x-request-id"];
@@ -185,6 +239,84 @@ export function createAdminApiServer({
       if (request.method === "GET" && url.pathname === "/health") {
         await repository.ping();
         writeJson(response, 200, { status: "ok" }, commonHeaders);
+        return;
+      }
+
+      const publicAction = PUBLIC_LICENSE_ACTIONS.get(url.pathname);
+      if (request.method === "POST" && publicAction) {
+        const startedAt = Date.now();
+        const ipAddress = clientIp(request);
+        const rate = rateLimiter.check(ipAddress || "unknown");
+        const rateHeaders = {
+          ...commonHeaders,
+          "x-ratelimit-limit": String(rate.limit),
+          "x-ratelimit-remaining": String(rate.remaining),
+        };
+
+        if (!rate.allowed) {
+          const headers = { ...rateHeaders, "retry-after": String(rate.retryAfterSeconds) };
+          writeJson(
+            response,
+            429,
+            {
+              error: { code: "RATE_LIMITED", message: "Too many requests" },
+              requestId,
+            },
+            headers,
+          );
+          safeStructuredLog(logger, {
+            type: "http_request",
+            requestId,
+            method: request.method,
+            path: url.pathname,
+            statusCode: 429,
+            errorCode: "RATE_LIMITED",
+            durationMs: Date.now() - startedAt,
+            ipAddress,
+          });
+          return;
+        }
+
+        try {
+          const input = normalizePublicPayload(publicAction, await readJson(request));
+          const result = await publicLicenses[publicAction](input, { requestId, ipAddress });
+          writeJson(response, 200, { ...result, requestId }, rateHeaders);
+          safeStructuredLog(logger, {
+            type: "http_request",
+            requestId,
+            method: request.method,
+            path: url.pathname,
+            statusCode: 200,
+            durationMs: Date.now() - startedAt,
+            ipAddress,
+          });
+        } catch (error) {
+          const statusCode = Number(error?.statusCode) || 500;
+          const errorCode =
+            error?.errorCode || (statusCode >= 500 ? "SERVER_ERROR" : "INVALID_REQUEST");
+          writeJson(
+            response,
+            statusCode,
+            {
+              error: {
+                code: errorCode,
+                message: statusCode >= 500 ? "Internal server error" : error.message,
+              },
+              requestId,
+            },
+            rateHeaders,
+          );
+          safeStructuredLog(logger, {
+            type: "http_request",
+            requestId,
+            method: request.method,
+            path: url.pathname,
+            statusCode,
+            errorCode,
+            durationMs: Date.now() - startedAt,
+            ipAddress,
+          });
+        }
         return;
       }
 
@@ -442,7 +574,7 @@ export function createAdminApiServer({
             200,
             {
               devices: result.items,
-              pagination: { total: result.total, limit: result.limit, offset: result.offset },
+              pagination: { total: result.total, limit, offset },
             },
             commonHeaders,
           );
