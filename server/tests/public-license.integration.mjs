@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import process from "node:process";
 
 import { createAdminApiServer } from "../src/app.mjs";
 import { DeviceRepository } from "../src/device-repository.mjs";
