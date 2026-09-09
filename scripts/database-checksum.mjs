@@ -15,6 +15,7 @@ export function migrationChecksum(content) {
 export function acceptedMigrationChecksums(content) {
   const normalized = normalizeSqlForChecksum(content);
   return new Set([
+    sha256(content),
     sha256(normalized),
     sha256(normalized.replaceAll('\n', '\r\n')),
   ]);
