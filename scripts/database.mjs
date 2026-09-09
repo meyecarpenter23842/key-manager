@@ -1,16 +1,21 @@
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import process from 'node:process';
 import { fileURLToPath } from 'node:url';
-import { spawnSync } from 'node:child_process';
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const migrationsDir = join(repoRoot, 'database', 'migrations');
 const testsDir = join(repoRoot, 'database', 'tests');
 const mode = process.argv[2] ?? 'migrate';
 
+function log(message) {
+  process.stdout.write(`[database] ${message}\n`);
+}
+
 function fail(message) {
-  console.error(`[database] ${message}`);
+  process.stderr.write(`[database] ${message}\n`);
   process.exit(1);
 }
 
@@ -93,8 +98,8 @@ function checkOrder() {
   if (migrations.length === 0) fail('no migrations found');
   if (tests.length === 0) fail('no database tests found');
 
-  console.log(`[database] ordered migrations: ${migrations.join(', ')}`);
-  console.log(`[database] ordered tests: ${tests.join(', ')}`);
+  log(`ordered migrations: ${migrations.join(', ')}`);
+  log(`ordered tests: ${tests.join(', ')}`);
   return { migrations, tests };
 }
 
@@ -133,11 +138,11 @@ function migrate(migrations) {
       if (existing.name !== file || existing.checksum !== currentChecksum) {
         fail(`applied migration ${version} does not match ${file}; never edit an applied migration`);
       }
-      console.log(`[database] already applied ${file}`);
+      log(`already applied ${file}`);
       continue;
     }
 
-    console.log(`[database] applying ${file}`);
+    log(`applying ${file}`);
     runPsql(
       [],
       `BEGIN;\n` +
@@ -152,7 +157,7 @@ function migrate(migrations) {
 
 function test(tests) {
   for (const file of tests) {
-    console.log(`[database] testing ${file}`);
+    log(`testing ${file}`);
     runPsql(['-f', join(testsDir, file)]);
   }
 }
