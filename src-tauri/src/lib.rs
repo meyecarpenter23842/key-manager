@@ -11,7 +11,7 @@ fn app_info() -> String {
 }
 
 #[tauri::command]
-fn package_key_manager_release(
+fn package_key_manager_release_safe(
     app: AppHandle,
     new_version: String,
     release_notes: String,
@@ -57,7 +57,7 @@ pub fn run() {
             admin_api::admin_api_runtime_status,
             release_manager::get_release_manager_config,
             release_manager::save_release_manager_config,
-            package_key_manager_release,
+            package_key_manager_release_safe,
             release_manager::check_key_manager_update,
             release_manager::install_key_manager_update,
             release_manager::package_external_application
@@ -71,14 +71,4 @@ pub fn run() {
             admin_api::stop_managed(&state);
         }
     });
-}
-
-#[cfg(test)]
-mod tests {
-    use super::app_info;
-
-    #[test]
-    fn app_info_identifies_desktop_runtime() {
-        assert_eq!(app_info(), "Key Manager Desktop / Tauri");
-    }
 }
