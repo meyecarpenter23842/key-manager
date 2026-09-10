@@ -1,4 +1,5 @@
 mod admin_api;
+mod r2_credentials;
 mod release_manager;
 mod release_manager_v2;
 
@@ -217,6 +218,10 @@ pub fn run() {
             configure_admin_api,
             admin_api::ensure_admin_api,
             admin_api::admin_api_runtime_status,
+            r2_credentials::list_r2_credential_profiles,
+            r2_credentials::save_r2_credential_profile,
+            r2_credentials::delete_r2_credential_profile,
+            r2_credentials::bind_r2_credential_profile,
             release_manager::get_release_manager_config,
             release_manager::save_release_manager_config,
             package_key_manager_release_safe,
