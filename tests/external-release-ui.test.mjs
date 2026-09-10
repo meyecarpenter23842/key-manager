@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
-const source = readFileSync(new URL("../src/ReleaseManagerPage.tsx", import.meta.url), "utf8");
+const source = readFileSync("src/ReleaseManagerPage.tsx", "utf8");
 
 describe("external release UI regression coverage", () => {
   it("stores external publish failures in the Build / Publish log before reporting them", () => {
