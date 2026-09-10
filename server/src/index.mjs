@@ -18,6 +18,7 @@ const server = createAdminApiServer({
   repository,
   sessionTtlHours: config.sessionTtlHours,
   allowedOrigins: config.allowedOrigins,
+  licenseKeyEncryptionKey: config.licenseKeyEncryptionKey,
   publicRateLimitMax: config.publicRateLimitMax,
   publicRateLimitWindowMs: config.publicRateLimitWindowMs,
   logger: structuredLogger,
