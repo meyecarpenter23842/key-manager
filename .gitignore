@@ -10,6 +10,7 @@ dist/
 
 # Rust / Tauri
 src-tauri/target/
+src-tauri/binaries/*.exe
 **/*.rs.bk
 
 # Windows build output

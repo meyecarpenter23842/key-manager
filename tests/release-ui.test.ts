@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatFileSize, joinPatterns, splitPatterns } from "../src/releaseUi";
+import { formatFileSize, joinPatterns, nextPatchVersion, splitPatterns } from "../src/releaseUi";
 
 describe("release manager UI helpers", () => {
   it("normalizes artifact patterns from common separators", () => {
@@ -14,6 +14,12 @@ describe("release manager UI helpers", () => {
 
   it("joins patterns for editable fields", () => {
     expect(joinPatterns(["*.exe", "latest.yml"])).toBe("*.exe, latest.yml");
+  });
+
+  it("suggests the next patch version only for stable semver", () => {
+    expect(nextPatchVersion("0.1.0")).toBe("0.1.1");
+    expect(nextPatchVersion("1.9.99")).toBe("1.9.100");
+    expect(nextPatchVersion("1.0.0-rc.1")).toBe("");
   });
 
   it("formats installer sizes", () => {

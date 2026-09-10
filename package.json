@@ -12,6 +12,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
+    "desktop:prepare-sidecar": "node scripts/build-admin-api-sidecar.mjs",
     "desktop:dev": "tauri dev",
     "desktop:build": "tauri build",
     "server:start": "node server/src/index.mjs",
