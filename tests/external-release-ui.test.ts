@@ -6,7 +6,7 @@ const source = readFileSync(new URL("../src/ReleaseManagerPage.tsx", import.meta
 
 describe("external release UI regression coverage", () => {
   it("stores external publish failures in the Build / Publish log before reporting them", () => {
-    const flow = source.match(/async function runExternalPackage[\s\S]*?\n  }\n\n  if \(!config\)/)?.[0] ?? "";
+    const flow = source.match(/async function runExternalPackage[\s\S]*?\n {2}}\n\n {2}if \(!config\)/)?.[0] ?? "";
     expect(flow).toContain("const message = errorMessage(error);");
     expect(flow).toContain("setLog(message);");
     expect(flow.indexOf("setLog(message);")).toBeLessThan(flow.indexOf("onError("));
