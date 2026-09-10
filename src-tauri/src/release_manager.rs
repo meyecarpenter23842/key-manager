@@ -119,7 +119,10 @@ pub(crate) fn package_key_manager(app: AppHandle) -> Result<PackageResult, Strin
     let config = load_config(&app)?;
     validate_config(&config)?;
 
-    let source = canonical_existing_dir(Path::new(&config.key_manager_source_dir), "Key Manager source")?;
+    let source = canonical_existing_dir(
+        Path::new(&config.key_manager_source_dir),
+        "Key Manager source",
+    )?;
     let output_dir = resolve_path(&source, &config.key_manager_output_dir);
     let build = run_shell(&config.key_manager_build_command, &source)?;
     if !build.status.success() {
@@ -130,10 +133,7 @@ pub(crate) fn package_key_manager(app: AppHandle) -> Result<PackageResult, Strin
         ));
     }
 
-    let version = read_json_string(
-        &source.join("src-tauri").join("tauri.conf.json"),
-        "version",
-    )?;
+    let version = read_json_string(&source.join("src-tauri").join("tauri.conf.json"), "version")?;
     validate_version_segment(&version)?;
 
     let source_artifacts = collect_matching_files(&output_dir, &["*.exe".to_string()])?;
@@ -253,7 +253,9 @@ pub(crate) fn install_key_manager_update(app: AppHandle) -> Result<(), String> {
     let manifest = read_local_manifest(&update_root.join("latest.json"))?;
     let current = app.package_info().version.to_string();
     if compare_versions(&manifest.version, &current)? != Ordering::Greater {
-        return Err("NO_NEWER_VERSION: latest local release is not newer than the running app".to_string());
+        return Err(
+            "NO_NEWER_VERSION: latest local release is not newer than the running app".to_string(),
+        );
     }
 
     let installer = resolve_manifest_installer(&update_root, &manifest)?;
@@ -339,13 +341,18 @@ pub(crate) fn package_external_application(
                 .unwrap_or(false)
         })
     {
-        return Err("PUBLISH_POINTER_NOT_FOUND: none of manifestPatterns matched a build artifact".to_string());
+        return Err(
+            "PUBLISH_POINTER_NOT_FOUND: none of manifestPatterns matched a build artifact"
+                .to_string(),
+        );
     }
 
     let uploader = resource_file(&app, "r2-upload.mjs")?;
     for required in [R2_ACCOUNT_ENV, R2_ACCESS_ENV, R2_SECRET_ENV] {
         if std::env::var_os(required).is_none() {
-            return Err(format!("R2_CREDENTIAL_MISSING: environment variable {required} is not set"));
+            return Err(format!(
+                "R2_CREDENTIAL_MISSING: environment variable {required} is not set"
+            ));
         }
     }
 
@@ -374,8 +381,9 @@ pub(crate) fn package_external_application(
     let release_artifacts = artifacts
         .iter()
         .map(|path| {
-            let metadata = fs::metadata(path)
-                .map_err(|error| format!("ARTIFACT_METADATA_FAILED: {}: {error}", path.display()))?;
+            let metadata = fs::metadata(path).map_err(|error| {
+                format!("ARTIFACT_METADATA_FAILED: {}: {error}", path.display())
+            })?;
             Ok(ReleaseArtifact {
                 name: file_name_string(path)?,
                 path: path.display().to_string(),
@@ -435,7 +443,9 @@ fn validate_config(config: &ReleaseManagerConfig) -> Result<(), String> {
         || config.key_manager_output_dir.trim().is_empty()
         || config.key_manager_update_dir.trim().is_empty()
     {
-        return Err("RELEASE_CONFIG_INVALID: Key Manager paths/build command are required".to_string());
+        return Err(
+            "RELEASE_CONFIG_INVALID: Key Manager paths/build command are required".to_string(),
+        );
     }
     for profile in &config.external_profiles {
         validate_external_profile(profile)?;
@@ -475,14 +485,19 @@ fn validate_external_profile(profile: &ExternalReleaseProfile) -> Result<(), Str
         .split('/')
         .any(|segment| segment == ".." || segment == ".")
     {
-        return Err("RELEASE_PROFILE_INVALID: R2 prefix cannot contain . or .. segments".to_string());
+        return Err(
+            "RELEASE_PROFILE_INVALID: R2 prefix cannot contain . or .. segments".to_string(),
+        );
     }
     Ok(())
 }
 
 fn canonical_existing_dir(path: &Path, label: &str) -> Result<PathBuf, String> {
     if !path.is_dir() {
-        return Err(format!("PATH_NOT_FOUND: {label} is not a directory: {}", path.display()));
+        return Err(format!(
+            "PATH_NOT_FOUND: {label} is not a directory: {}",
+            path.display()
+        ));
     }
     path.canonicalize()
         .map_err(|error| format!("PATH_CANONICALIZE_FAILED: {}: {error}", path.display()))
@@ -500,8 +515,8 @@ fn resolve_path(base: &Path, configured: &str) -> PathBuf {
 fn read_json_string(path: &Path, field: &str) -> Result<String, String> {
     let raw = fs::read_to_string(path)
         .map_err(|error| format!("VERSION_FILE_READ_FAILED: {}: {error}", path.display()))?;
-    let value: Value =
-        serde_json::from_str(&raw).map_err(|error| format!("VERSION_FILE_PARSE_FAILED: {error}"))?;
+    let value: Value = serde_json::from_str(&raw)
+        .map_err(|error| format!("VERSION_FILE_PARSE_FAILED: {error}"))?;
     let mut current = &value;
     for segment in field.split('.') {
         current = current.get(segment).ok_or_else(|| {
@@ -566,7 +581,9 @@ fn walk_files(
 }
 
 fn matches_any(patterns: &[String], value: &str) -> bool {
-    patterns.iter().any(|pattern| wildcard_match(pattern, value))
+    patterns
+        .iter()
+        .any(|pattern| wildcard_match(pattern, value))
 }
 
 fn wildcard_match(pattern: &str, value: &str) -> bool {
@@ -621,8 +638,9 @@ fn compare_versions(left: &str, right: &str) -> Result<Ordering, String> {
         let numbers = core
             .split('.')
             .map(|part| {
-                part.parse::<u64>()
-                    .map_err(|_| format!("VERSION_INVALID: {value} is not a numeric dotted version"))
+                part.parse::<u64>().map_err(|_| {
+                    format!("VERSION_INVALID: {value} is not a numeric dotted version")
+                })
             })
             .collect::<Result<Vec<_>, _>>()?;
         if numbers.is_empty() {
@@ -689,7 +707,9 @@ fn resolve_manifest_installer(
     update_root: &Path,
     manifest: &LocalUpdateManifest,
 ) -> Result<PathBuf, String> {
-    let installer = update_root.join(&manifest.version).join(&manifest.installer);
+    let installer = update_root
+        .join(&manifest.version)
+        .join(&manifest.installer);
     if !installer.is_file() {
         return Err(format!(
             "UPDATE_INSTALLER_NOT_FOUND: {}",
@@ -822,8 +842,14 @@ mod tests {
 
     #[test]
     fn version_order_handles_release_and_prerelease() {
-        assert_eq!(compare_versions("0.2.0", "0.1.9").unwrap(), Ordering::Greater);
-        assert_eq!(compare_versions("1.0.0", "1.0.0-beta.1").unwrap(), Ordering::Greater);
+        assert_eq!(
+            compare_versions("0.2.0", "0.1.9").unwrap(),
+            Ordering::Greater
+        );
+        assert_eq!(
+            compare_versions("1.0.0", "1.0.0-beta.1").unwrap(),
+            Ordering::Greater
+        );
         assert_eq!(compare_versions("1.2", "1.2.0").unwrap(), Ordering::Equal);
     }
 
