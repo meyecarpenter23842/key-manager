@@ -1,0 +1,32 @@
+.release-page { gap: 18px; }
+.release-panel { padding: 22px; }
+.release-panel-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 18px; }
+.release-panel-heading h2 { margin: 0 0 5px; font-size: 17px; }
+.release-panel-heading p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
+.release-mode { display: inline-flex; align-items: center; justify-content: center; min-width: 58px; height: 28px; padding: 0 10px; border-radius: 999px; font-size: 11px; font-weight: 800; letter-spacing: .08em; }
+.release-mode.local { color: #6a50df; background: var(--purple-soft); }
+.release-mode.r2 { color: #a46000; background: var(--warning-soft); }
+.release-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 18px; }
+.release-status-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 18px; }
+.release-status-grid > div { min-width: 0; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--soft); }
+.release-status-grid span, .release-status-grid small { display: block; color: var(--muted); font-size: 11px; }
+.release-status-grid strong { display: block; margin-top: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.release-status-grid small { margin-top: 4px; }
+.r2-secret-note { margin-bottom: 14px; padding: 12px 14px; border: 1px solid #f0dfbd; border-radius: 10px; background: #fffaf0; color: #78571d; font-size: 12px; line-height: 1.55; }
+.r2-secret-note code { font-weight: 700; }
+.release-app-list { display: grid; gap: 8px; }
+.release-app-row { display: grid; grid-template-columns: minmax(220px, 1.1fr) minmax(220px, 1fr) auto; align-items: center; gap: 16px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+.release-profile-summary { min-width: 0; }
+.release-profile-summary strong, .release-profile-summary small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.release-profile-summary strong { font-size: 13px; }
+.release-profile-summary small, .release-profile-summary span { margin-top: 4px; color: var(--muted); font-size: 11px; }
+.release-row-actions { display: flex; align-items: center; gap: 8px; }
+.release-log { padding: 20px 22px; min-height: 180px; }
+.release-log pre { max-height: 360px; margin: 0; overflow: auto; padding: 14px; border-radius: 11px; background: #11131a; color: #d8deea; font: 12px/1.55 "Cascadia Code", Consolas, monospace; white-space: pre-wrap; word-break: break-word; }
+.release-loading { padding: 28px; color: var(--muted); }
+
+@media (max-width: 1180px) {
+  .release-status-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .release-app-row { grid-template-columns: minmax(220px, 1fr); }
+  .release-row-actions { justify-content: flex-start; }
+}
