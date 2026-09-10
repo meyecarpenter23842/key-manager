@@ -101,7 +101,7 @@ async function buildServerBundle() {
         },
       },
       ssr: {
-        external: ["pg"],
+        noExternal: true,
       },
     });
     const bundle = join(bundleRoot, "index.cjs");
