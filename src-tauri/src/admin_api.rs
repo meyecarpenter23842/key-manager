@@ -92,9 +92,7 @@ fn ensure_running_inner(
         API_ORIGINS.to_string(),
     );
 
-    if !runtime_env.contains_key("DATABASE_URL")
-        && std::env::var_os("DATABASE_URL").is_none()
-    {
+    if !runtime_env.contains_key("DATABASE_URL") && std::env::var_os("DATABASE_URL").is_none() {
         let expected = app_config_env_path(app)
             .map(|path| path.display().to_string())
             .unwrap_or_else(|_| ENV_FILE_NAME.to_string());
@@ -107,8 +105,7 @@ fn ensure_running_inner(
 
     let log_path = admin_api_log_path(app)?;
     if let Some(parent) = log_path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|error| format!("ADMIN_API_LOG_DIR_FAILED: {error}"))?;
+        fs::create_dir_all(parent).map_err(|error| format!("ADMIN_API_LOG_DIR_FAILED: {error}"))?;
     }
     let log = OpenOptions::new()
         .create(true)
@@ -326,9 +323,7 @@ fn api_health_ok() -> bool {
     let _ = stream.set_read_timeout(Some(Duration::from_millis(400)));
     let _ = stream.set_write_timeout(Some(Duration::from_millis(400)));
     if stream
-        .write_all(
-            b"GET /health HTTP/1.1\r\nHost: 127.0.0.1:3101\r\nConnection: close\r\n\r\n",
-        )
+        .write_all(b"GET /health HTTP/1.1\r\nHost: 127.0.0.1:3101\r\nConnection: close\r\n\r\n")
         .is_err()
     {
         return false;
