@@ -1,8 +1,17 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  statSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { build as viteBuild } from "vite";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const root = resolve(scriptDir, "..");
@@ -49,35 +58,101 @@ function clearTauriSidecarCache() {
   }
 }
 
+function smokeTestSidecar(path) {
+  const result = spawnSync(path, ["--sidecar-self-test"], {
+    cwd: root,
+    encoding: "utf8",
+    timeout: 15_000,
+    windowsHide: true,
+  });
+  if (result.error) {
+    throw new Error(`ADMIN_API_SIDECAR_SELF_TEST_FAILED: ${result.error.message}`);
+  }
+  if (result.status !== 0) {
+    const detail = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
+    throw new Error(
+      `ADMIN_API_SIDECAR_SELF_TEST_FAILED: exit ${result.status ?? "signal"}${detail ? `\n${detail}` : ""}`,
+    );
+  }
+  if (!String(result.stdout || "").includes("sidecar self-test ok")) {
+    throw new Error("ADMIN_API_SIDECAR_SELF_TEST_FAILED: expected success marker was not printed");
+  }
+}
+
+async function buildServerBundle() {
+  const bundleRoot = mkdtempSync(join(tmpdir(), "key-manager-admin-api-"));
+  try {
+    await viteBuild({
+      configFile: false,
+      root,
+      logLevel: "warn",
+      build: {
+        ssr: join(serverRoot, "index.mjs"),
+        outDir: bundleRoot,
+        emptyOutDir: true,
+        minify: false,
+        sourcemap: false,
+        rollupOptions: {
+          output: {
+            format: "cjs",
+            entryFileNames: "index.cjs",
+            inlineDynamicImports: true,
+          },
+        },
+      },
+      ssr: {
+        noExternal: true,
+      },
+    });
+    const bundle = join(bundleRoot, "index.cjs");
+    if (!existsSync(bundle)) {
+      throw new Error(`ADMIN_API_SIDECAR_BUNDLE_FAILED: output missing at ${bundle}`);
+    }
+    return { bundleRoot, bundle };
+  } catch (error) {
+    rmSync(bundleRoot, { recursive: true, force: true });
+    throw error;
+  }
+}
+
 if (existsSync(output) && statSync(output).mtimeMs >= inputMtime) {
+  smokeTestSidecar(output);
   clearTauriSidecarCache();
-  process.stdout.write(`[admin-api-sidecar] up to date: ${output}\n`);
+  process.stdout.write(`[admin-api-sidecar] up to date and self-tested: ${output}\n`);
   process.exit(0);
 }
 
-process.stdout.write(`[admin-api-sidecar] building ${targetTriple}\n`);
-const pkgArgs = [
-  "dlx",
-  "@yao-pkg/pkg@6.22.0",
-  "server/src/index.mjs",
-  "--target",
-  `node22-win-${pkgArch}`,
-  "--output",
-  output,
-];
-const command = process.env.ComSpec || "cmd.exe";
-const result = spawnSync(command, ["/D", "/S", "/C", "pnpm", ...pkgArgs], {
-  cwd: root,
-  stdio: "inherit",
-  env: process.env,
-});
+process.stdout.write(`[admin-api-sidecar] bundling server for ${targetTriple}\n`);
+const { bundleRoot, bundle } = await buildServerBundle();
+try {
+  process.stdout.write(`[admin-api-sidecar] packaging ${targetTriple}\n`);
+  const pkgArgs = [
+    "dlx",
+    "@yao-pkg/pkg@6.22.0",
+    bundle,
+    "--target",
+    `node22-win-${pkgArch}`,
+    "--output",
+    output,
+  ];
+  const command = process.env.ComSpec || "cmd.exe";
+  const result = spawnSync(command, ["/D", "/S", "/C", "pnpm", ...pkgArgs], {
+    cwd: root,
+    stdio: "inherit",
+    env: process.env,
+  });
 
-if (result.error) throw result.error;
-if (result.status !== 0) {
-  throw new Error(`ADMIN_API_SIDECAR_BUILD_FAILED: exit ${result.status ?? "signal"}`);
+  if (result.error) throw result.error;
+  if (result.status !== 0) {
+    throw new Error(`ADMIN_API_SIDECAR_BUILD_FAILED: exit ${result.status ?? "signal"}`);
+  }
+  if (!existsSync(output)) {
+    throw new Error(`ADMIN_API_SIDECAR_BUILD_FAILED: output missing at ${output}`);
+  }
+
+  smokeTestSidecar(output);
+  clearTauriSidecarCache();
+  process.stdout.write(`[admin-api-sidecar] ready and self-tested: ${output}\n`);
+} finally {
+  rmSync(bundleRoot, { recursive: true, force: true });
 }
-if (!existsSync(output)) {
-  throw new Error(`ADMIN_API_SIDECAR_BUILD_FAILED: output missing at ${output}`);
-}
-clearTauriSidecarCache();
-process.stdout.write(`[admin-api-sidecar] ready: ${output}\n`);

@@ -5,6 +5,11 @@ import { loadServerConfig } from "./config.mjs";
 import { AdminRepository, createDatabasePool } from "./repository.mjs";
 import { createStructuredLogger } from "./structured-log.mjs";
 
+if (process.argv.includes("--sidecar-self-test")) {
+  process.stdout.write("[key-manager-api] sidecar self-test ok\n");
+  process.exit(0);
+}
+
 const config = loadServerConfig();
 const pool = createDatabasePool(config.databaseUrl);
 const repository = new AdminRepository(pool);
