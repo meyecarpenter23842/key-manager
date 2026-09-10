@@ -10,6 +10,7 @@ import {
   checkKeyManagerUpdate,
   deleteKeyManagerDraftRelease,
   deleteR2CredentialProfile,
+  getExternalReleaseStatus,
   getReleaseManagerConfig,
   installKeyManagerUpdate,
   listR2CredentialProfiles,
@@ -32,6 +33,14 @@ interface R2CredentialEditor {
   accountId: string;
   accessKeyPreview: string;
   hasSecret: boolean;
+}
+
+interface ExternalPublishEditor {
+  application: Application;
+  currentVersion: string;
+  newVersion: string;
+  releaseNotes: string;
+  destination: string;
 }
 
 const emptyR2State: R2CredentialState = { profiles: [], bindings: [] };
@@ -67,7 +76,9 @@ function editorFromR2Profile(profile: R2CredentialProfileSummary): R2CredentialE
 }
 
 function resultSummary(result: PackageResult): string {
-  const files = result.artifacts.map((artifact) => `${artifact.name} (${formatFileSize(artifact.size)})`).join("\n");
+  const files = result.artifacts
+    .map((artifact) => `${artifact.name} (${formatFileSize(artifact.size)})`)
+    .join("\n");
   return `${result.appCode} ${result.version}\n${result.destination}\n${files}\n\n${result.log}`.trim();
 }
 
@@ -83,6 +94,7 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
   const [newVersion, setNewVersion] = useState("");
   const [releaseNotes, setReleaseNotes] = useState("");
   const [conflictVersion, setConflictVersion] = useState<string | null>(null);
+  const [publishing, setPublishing] = useState<ExternalPublishEditor | null>(null);
   const [editing, setEditing] = useState<ExternalReleaseProfile | null>(null);
   const [editingR2, setEditingR2] = useState<R2CredentialEditor | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -168,6 +180,7 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
       setReleaseNotes("");
     } catch (error) {
       const message = errorMessage(error);
+      setLog(message);
       if (message.includes("RELEASE_ALREADY_EXISTS:")) {
         setConflictVersion(version);
       }
@@ -179,11 +192,19 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
 
   async function deleteConflictingRelease() {
     if (!conflictVersion) return;
-    if (!window.confirm(`Xóa release nháp ${conflictVersion}? Chỉ release không phải latest/source/running version mới được phép xóa.`)) return;
+    if (
+      !window.confirm(
+        `Xóa release nháp ${conflictVersion}? Chỉ release không phải latest/source/running version mới được phép xóa.`,
+      )
+    )
+      return;
     try {
       setBusy("delete-draft-release");
       await deleteKeyManagerDraftRelease(conflictVersion);
-      notify(`Đã xóa release nháp ${conflictVersion}`, "Có thể bấm Đóng gói bản mới lại với cùng version.");
+      notify(
+        `Đã xóa release nháp ${conflictVersion}`,
+        "Có thể bấm Đóng gói bản mới lại với cùng version.",
+      );
       setConflictVersion(null);
       setUpdate(await checkKeyManagerUpdate());
     } catch (error) {
@@ -207,7 +228,11 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
   }
 
   async function installUpdate() {
-    if (!update?.available || !window.confirm(`Cập nhật Key Manager lên ${update.latestVersion}? Ứng dụng sẽ tự đóng và mở lại.`)) return;
+    if (
+      !update?.available ||
+      !window.confirm(`Cập nhật Key Manager lên ${update.latestVersion}? Ứng dụng sẽ tự đóng và mở lại.`)
+    )
+      return;
     try {
       setBusy("install-update");
       await installKeyManagerUpdate();
@@ -238,7 +263,9 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
       r2Prefix: String(data.get("r2Prefix") || "").trim(),
     };
     const selectedR2ProfileId = String(data.get("r2CredentialProfileId") || "").trim() || null;
-    const externalProfiles = config.externalProfiles.filter((item) => item.applicationId !== profile.applicationId);
+    const externalProfiles = config.externalProfiles.filter(
+      (item) => item.applicationId !== profile.applicationId,
+    );
     const next = { ...config, externalProfiles: [...externalProfiles, profile] };
 
     try {
@@ -282,10 +309,14 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
   async function deleteR2Profile(profile: R2CredentialProfileSummary) {
     const usedBy = r2UsageCount.get(profile.id) ?? 0;
     if (usedBy > 0) {
-      notify("Không thể xóa tài khoản R2 đang được sử dụng", `Hãy đổi tài khoản R2 cho ${usedBy} ứng dụng đang dùng profile này trước.`);
+      notify(
+        "Không thể xóa tài khoản R2 đang được sử dụng",
+        `Hãy đổi tài khoản R2 cho ${usedBy} ứng dụng đang dùng profile này trước.`,
+      );
       return;
     }
-    if (!window.confirm(`Xóa tài khoản R2 “${profile.name}”? Secret đã lưu trên máy này cũng sẽ bị xóa.`)) return;
+    if (!window.confirm(`Xóa tài khoản R2 “${profile.name}”? Secret đã lưu trên máy này cũng sẽ bị xóa.`))
+      return;
 
     try {
       setBusy(`delete-r2:${profile.id}`);
@@ -299,21 +330,60 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
     }
   }
 
-  async function packageExternal(application: Application) {
+  async function openExternalPublish(application: Application) {
+    try {
+      setBusy(`external-status:${application.id}`);
+      const status = await getExternalReleaseStatus(application.id);
+      setPublishing({
+        application,
+        currentVersion: status.currentVersion,
+        newVersion: nextPatchVersion(status.currentVersion),
+        releaseNotes: "",
+        destination: status.destination,
+      });
+    } catch (error) {
+      const message = errorMessage(error);
+      setLog(message);
+      onError(error instanceof Error ? error : new Error(message));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function runExternalPackage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!publishing) return;
+    const version = publishing.newVersion.trim();
+    const notes = publishing.releaseNotes.trim();
+    if (!version || !notes) return;
+    const application = publishing.application;
+
     try {
       setBusy(`external:${application.id}`);
-      const result = await packageExternalApplication(application.id);
+      const result = await packageExternalApplication(application.id, version, notes);
       setLog(resultSummary(result));
+      setApplications((current) =>
+        current.map((item) =>
+          item.id === application.id ? { ...item, currentVersion: result.version } : item,
+        ),
+      );
+      setPublishing(null);
       notify(`Đã build & publish ${application.name} ${result.version}`, result.destination);
     } catch (error) {
-      onError(error instanceof Error ? error : new Error(String(error)));
+      const message = errorMessage(error);
+      setLog(message);
+      onError(error instanceof Error ? error : new Error(message));
     } finally {
       setBusy(null);
     }
   }
 
   if (!config) {
-    return <div className="page"><div className="panel release-loading">Đang tải Build & Update…</div></div>;
+    return (
+      <div className="page">
+        <div className="panel release-loading">Đang tải Build & Update…</div>
+      </div>
+    );
   }
 
   return (
@@ -330,7 +400,10 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
         <div className="release-panel-heading">
           <div>
             <h2>Key Manager · LOCAL</h2>
-            <p>Nhập version mới và release notes. Key Manager tự đồng bộ source, build NSIS và publish release hoàn chỉnh.</p>
+            <p>
+              Nhập version mới và release notes. Key Manager tự đồng bộ source, build NSIS và publish release
+              hoàn chỉnh.
+            </p>
           </div>
           <span className="release-mode local">LOCAL</span>
         </div>
@@ -362,7 +435,11 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
             />
           </Field>
           <div className="release-actions primary-flow">
-            <button className="button primary" type="submit" disabled={Boolean(busy) || !newVersion.trim() || !releaseNotes.trim()}>
+            <button
+              className="button primary"
+              type="submit"
+              disabled={Boolean(busy) || !newVersion.trim() || !releaseNotes.trim()}
+            >
               <PackageIcon size={17} /> {busy === "key-manager-package" ? "Đang đóng gói…" : "Đóng gói bản mới"}
             </button>
           </div>
@@ -372,9 +449,17 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
           <div className="release-conflict" role="status">
             <div>
               <strong>Release {conflictVersion} đã tồn tại nhưng chưa được publish làm bản mới nhất.</strong>
-              <small>Key Manager không tự ghi đè release cũ. Nếu đây là release nháp/lỗi từ lần test trước, xóa nó rồi đóng gói lại.</small>
+              <small>
+                Key Manager không tự ghi đè release cũ. Nếu đây là release nháp/lỗi từ lần test trước, xóa nó
+                rồi đóng gói lại.
+              </small>
             </div>
-            <button className="button danger-soft" type="button" disabled={Boolean(busy)} onClick={() => void deleteConflictingRelease()}>
+            <button
+              className="button danger-soft"
+              type="button"
+              disabled={Boolean(busy)}
+              onClick={() => void deleteConflictingRelease()}
+            >
               {busy === "delete-draft-release" ? "Đang xóa…" : `Xóa release nháp ${conflictVersion}`}
             </button>
           </div>
@@ -384,25 +469,65 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
           <summary>Advanced settings</summary>
           <p className="release-advanced-note">Chỉ cần mở khi đổi máy build hoặc thay cấu trúc source/output.</p>
           <div className="form-grid two">
-            <Field label="Source folder"><input value={config.keyManagerSourceDir} onChange={(event) => setConfig({ ...config, keyManagerSourceDir: event.target.value })} /></Field>
-            <Field label="Update folder"><input value={config.keyManagerUpdateDir} onChange={(event) => setConfig({ ...config, keyManagerUpdateDir: event.target.value })} /></Field>
-            <Field label="Build command"><input value={config.keyManagerBuildCommand} onChange={(event) => setConfig({ ...config, keyManagerBuildCommand: event.target.value })} /></Field>
-            <Field label="Build output"><input value={config.keyManagerOutputDir} onChange={(event) => setConfig({ ...config, keyManagerOutputDir: event.target.value })} /></Field>
+            <Field label="Source folder">
+              <input
+                value={config.keyManagerSourceDir}
+                onChange={(event) => setConfig({ ...config, keyManagerSourceDir: event.target.value })}
+              />
+            </Field>
+            <Field label="Update folder">
+              <input
+                value={config.keyManagerUpdateDir}
+                onChange={(event) => setConfig({ ...config, keyManagerUpdateDir: event.target.value })}
+              />
+            </Field>
+            <Field label="Build command">
+              <input
+                value={config.keyManagerBuildCommand}
+                onChange={(event) => setConfig({ ...config, keyManagerBuildCommand: event.target.value })}
+              />
+            </Field>
+            <Field label="Build output">
+              <input
+                value={config.keyManagerOutputDir}
+                onChange={(event) => setConfig({ ...config, keyManagerOutputDir: event.target.value })}
+              />
+            </Field>
           </div>
           <div className="release-actions">
-            <button className="button ghost" type="button" disabled={Boolean(busy)} onClick={() => void saveConfig()}>
+            <button
+              className="button ghost"
+              type="button"
+              disabled={Boolean(busy)}
+              onClick={() => void saveConfig()}
+            >
               <CheckIcon size={17} /> {busy === "save" ? "Đang lưu…" : "Lưu Advanced settings"}
             </button>
           </div>
         </details>
 
         <div className="release-status-grid">
-          <div><span>Version local mới nhất</span><strong>{update?.latestVersion ?? "Chưa có"}</strong></div>
-          <div><span>Installer</span><strong>{update?.installerName ?? "—"}</strong><small>{formatFileSize(update?.installerSize)}</small></div>
-          <div><span>Kho update</span><strong>{config.keyManagerUpdateDir}</strong></div>
+          <div>
+            <span>Version local mới nhất</span>
+            <strong>{update?.latestVersion ?? "Chưa có"}</strong>
+          </div>
+          <div>
+            <span>Installer</span>
+            <strong>{update?.installerName ?? "—"}</strong>
+            <small>{formatFileSize(update?.installerSize)}</small>
+          </div>
+          <div>
+            <span>Kho update</span>
+            <strong>{config.keyManagerUpdateDir}</strong>
+          </div>
         </div>
         <div className="release-update-actions">
-          <button className="button ghost" type="button" disabled={Boolean(busy)} onClick={() => void checkUpdate()}>
+          <button
+            className="button ghost"
+            type="button"
+            disabled={Boolean(busy)}
+            onClick={() => void checkUpdate()}
+          >
             <RefreshIcon size={17} /> {busy === "check-update" ? "Đang kiểm tra…" : "Kiểm tra cập nhật"}
           </button>
           <button
@@ -424,13 +549,18 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
         <div className="release-panel-heading">
           <div>
             <h2>Ứng dụng khác · R2</h2>
-            <p>Mỗi app có source/build/output riêng. Artifact upload trước, manifest như latest.yml upload cuối.</p>
+            <p>
+              Mỗi app có cấu hình source/build/output cố định. Version mới và release notes chỉ nhập khi phát
+              hành; artifact upload trước, manifest/publish pointer upload cuối.
+            </p>
           </div>
           <span className="release-mode r2">R2</span>
         </div>
 
         <div className="r2-secret-note">
-          Tài khoản R2 được lưu riêng trên máy này và mã hóa bằng Windows DPAPI. Secret không trả lại frontend sau khi lưu. Nếu một ứng dụng không chọn tài khoản R2, Key Manager mới dùng <code>R2_ACCOUNT_ID</code>, <code>R2_ACCESS_KEY_ID</code>, <code>R2_SECRET_ACCESS_KEY</code> làm fallback cho CI.
+          Tài khoản R2 được lưu riêng trên máy này và mã hóa bằng Windows DPAPI. Secret không trả lại frontend
+          sau khi lưu. Nếu một ứng dụng không chọn tài khoản R2, Key Manager mới dùng <code>R2_ACCOUNT_ID</code>,{" "}
+          <code>R2_ACCESS_KEY_ID</code>, <code>R2_SECRET_ACCESS_KEY</code> làm fallback cho CI.
         </div>
 
         <div className="r2-vault">
@@ -439,7 +569,12 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
               <strong>Tài khoản R2</strong>
               <small>Thêm nhiều tài khoản rồi chọn đúng tài khoản trong cấu hình từng ứng dụng.</small>
             </div>
-            <button className="button ghost" type="button" disabled={Boolean(busy)} onClick={() => setEditingR2(blankR2Editor())}>
+            <button
+              className="button ghost"
+              type="button"
+              disabled={Boolean(busy)}
+              onClick={() => setEditingR2(blankR2Editor())}
+            >
               + Thêm tài khoản R2
             </button>
           </div>
@@ -453,19 +588,38 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
                     <div className="r2-profile-main">
                       <strong>{profile.name}</strong>
                       <small>Account: {profile.accountId}</small>
-                      <small>Access key: {profile.accessKeyPreview} · Secret: {profile.hasSecret ? "Đã lưu" : "Chưa có"}</small>
+                      <small>
+                        Access key: {profile.accessKeyPreview} · Secret: {profile.hasSecret ? "Đã lưu" : "Chưa có"}
+                      </small>
                       <span>{usedBy ? `${usedBy} ứng dụng đang dùng` : "Chưa gắn ứng dụng"}</span>
                     </div>
                     <div className="r2-profile-actions">
-                      <button className="button ghost" type="button" disabled={Boolean(busy)} onClick={() => setEditingR2(editorFromR2Profile(profile))}>Sửa</button>
-                      <button className="button danger-soft" type="button" disabled={Boolean(busy) || usedBy > 0} onClick={() => void deleteR2Profile(profile)}>Xóa</button>
+                      <button
+                        className="button ghost"
+                        type="button"
+                        disabled={Boolean(busy)}
+                        onClick={() => setEditingR2(editorFromR2Profile(profile))}
+                      >
+                        Sửa
+                      </button>
+                      <button
+                        className="button danger-soft"
+                        type="button"
+                        disabled={Boolean(busy) || usedBy > 0}
+                        onClick={() => void deleteR2Profile(profile)}
+                      >
+                        Xóa
+                      </button>
                     </div>
                   </div>
                 );
               })}
             </div>
           ) : (
-            <div className="r2-profile-empty">Chưa có tài khoản R2. Thêm tài khoản đầu tiên để không phải cấu hình secret trong Windows Environment.</div>
+            <div className="r2-profile-empty">
+              Chưa có tài khoản R2. Thêm tài khoản đầu tiên để không phải cấu hình secret trong Windows
+              Environment.
+            </div>
           )}
         </div>
 
@@ -474,25 +628,57 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
             const profile = profileByApplication.get(application.id);
             const credentialId = r2BindingByApplication.get(application.id);
             const credential = credentialId ? r2ProfileById.get(credentialId) : null;
+            const readingVersion = busy === `external-status:${application.id}`;
+            const publishingApplication = busy === `external:${application.id}`;
             return (
               <div className="release-app-row" key={application.id}>
                 <div className="cell-title">
                   <span className="app-avatar large-avatar">{application.appCode.slice(0, 2)}</span>
-                  <div><strong>{application.name}</strong><small>{application.appCode} · {application.currentVersion || "chưa có version"}</small></div>
+                  <div>
+                    <strong>{application.name}</strong>
+                    <small>
+                      {application.appCode} · {application.currentVersion || "chưa có version"}
+                    </small>
+                  </div>
                 </div>
                 <div className="release-profile-summary">
                   {profile ? (
                     <>
                       <strong>{profile.r2Bucket}</strong>
-                      <small>{credential ? `R2: ${credential.name}` : credentialId ? "R2 profile không còn tồn tại" : "R2: ENV / CI fallback"}</small>
+                      <small>
+                        {credential
+                          ? `R2: ${credential.name}`
+                          : credentialId
+                            ? "R2 profile không còn tồn tại"
+                            : "R2: ENV / CI fallback"}
+                      </small>
                       <small>{profile.buildCommand}</small>
                     </>
-                  ) : <span>Chưa cấu hình build/R2</span>}
+                  ) : (
+                    <span>Chưa cấu hình build/R2</span>
+                  )}
                 </div>
                 <div className="release-row-actions">
-                  <button className="button ghost" type="button" onClick={() => openProfile(application)}>Cấu hình</button>
-                  <button className="button primary" type="button" disabled={!profile || Boolean(busy)} onClick={() => void packageExternal(application)}>
-                    <UploadIcon size={16} /> {busy === `external:${application.id}` ? "Đang publish…" : "Đóng gói & Upload R2"}
+                  <button
+                    className="button ghost"
+                    type="button"
+                    disabled={Boolean(busy)}
+                    onClick={() => openProfile(application)}
+                  >
+                    Cấu hình
+                  </button>
+                  <button
+                    className="button primary"
+                    type="button"
+                    disabled={!profile || Boolean(busy)}
+                    onClick={() => void openExternalPublish(application)}
+                  >
+                    <UploadIcon size={16} />
+                    {readingVersion
+                      ? "Đang đọc version…"
+                      : publishingApplication
+                        ? "Đang publish…"
+                        : "Phát hành R2"}
                   </button>
                 </div>
               </div>
@@ -501,37 +687,164 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
         </div>
       </section>
 
-      {log ? <section className="panel release-log"><div className="release-panel-heading"><div><h2>Build / Publish log</h2><p>Output gần nhất để đối chiếu khi build hoặc upload lỗi.</p></div></div><pre>{log}</pre></section> : null}
+      {log ? (
+        <section className="panel release-log">
+          <div className="release-panel-heading">
+            <div>
+              <h2>Build / Publish log</h2>
+              <p>Output gần nhất, kể cả khi build/validate/upload thất bại.</p>
+            </div>
+          </div>
+          <pre>{log}</pre>
+        </section>
+      ) : null}
+
+      {publishing ? (
+        <Modal
+          title={`Phát hành · ${publishing.application.name}`}
+          subtitle={`${publishing.application.appCode} · ${publishing.destination}`}
+          onClose={() => setPublishing(null)}
+          wide
+        >
+          <form className="modal-form" onSubmit={(event) => void runExternalPackage(event)}>
+            <div className="release-current-version">
+              <span>Version hiện tại</span>
+              <strong>{publishing.currentVersion}</strong>
+            </div>
+            <Field label="Version mới" hint="SemVer major.minor.patch; phải lớn hơn version hiện tại">
+              <input
+                value={publishing.newVersion}
+                onChange={(event) =>
+                  setPublishing((current) =>
+                    current ? { ...current, newVersion: event.target.value } : current,
+                  )
+                }
+                placeholder={nextPatchVersion(publishing.currentVersion) || "1.0.1"}
+                autoComplete="off"
+                required
+              />
+            </Field>
+            <Field
+              label="Release notes"
+              hint="Được truyền cho build qua KM_RELEASE_NOTES và ghi vào manifest JSON có field tương thích"
+            >
+              <textarea
+                value={publishing.releaseNotes}
+                onChange={(event) =>
+                  setPublishing((current) =>
+                    current ? { ...current, releaseNotes: event.target.value } : current,
+                  )
+                }
+                rows={5}
+                placeholder="Mô tả ngắn những thay đổi trong bản mới…"
+                required
+              />
+            </Field>
+            <div className="r2-secret-note">
+              Key Manager sẽ bump version source, build, validate artifact, upload artifact trước và
+              manifest/publish pointer cuối cùng. Nếu build/validate/upload lỗi, version source được rollback.
+            </div>
+            <div className="modal-actions">
+              <button className="button ghost" type="button" onClick={() => setPublishing(null)}>
+                Hủy
+              </button>
+              <button
+                className="button primary"
+                type="submit"
+                disabled={
+                  Boolean(busy) || !publishing.newVersion.trim() || !publishing.releaseNotes.trim()
+                }
+              >
+                <UploadIcon size={17} />
+                {busy === `external:${publishing.application.id}`
+                  ? "Đang build & publish…"
+                  : "Đóng gói & Upload R2"}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      ) : null}
 
       {editing ? (
-        <Modal title={`Cấu hình release · ${editing.appCode}`} subtitle="Cấu hình này chỉ lưu local trên máy chạy Key Manager." onClose={() => setEditing(null)} wide>
+        <Modal
+          title={`Cấu hình release · ${editing.appCode}`}
+          subtitle="Cấu hình này chỉ lưu local trên máy chạy Key Manager."
+          onClose={() => setEditing(null)}
+          wide
+        >
           <form className="modal-form" onSubmit={(event) => void saveProfile(event)}>
             <div className="form-grid two">
-              <Field label="Source folder"><input name="sourceDir" defaultValue={editing.sourceDir} required /></Field>
-              <Field label="Build output"><input name="outputDir" defaultValue={editing.outputDir} required /></Field>
+              <Field label="Source folder">
+                <input name="sourceDir" defaultValue={editing.sourceDir} required />
+              </Field>
+              <Field label="Build output">
+                <input name="outputDir" defaultValue={editing.outputDir} required />
+              </Field>
             </div>
-            <Field label="Build command"><input name="buildCommand" defaultValue={editing.buildCommand} required /></Field>
+            <Field label="Build command">
+              <input name="buildCommand" defaultValue={editing.buildCommand} required />
+            </Field>
             <div className="form-grid two">
-              <Field label="Version file"><input name="versionFile" defaultValue={editing.versionFile} required /></Field>
-              <Field label="Version field"><input name="versionField" defaultValue={editing.versionField} required /></Field>
+              <Field label="Version file">
+                <input name="versionFile" defaultValue={editing.versionFile} required />
+              </Field>
+              <Field label="Version field">
+                <input name="versionField" defaultValue={editing.versionField} required />
+              </Field>
             </div>
             <div className="form-grid two">
-              <Field label="Artifact patterns" hint="Phân cách bằng dấu phẩy, ; hoặc xuống dòng"><textarea name="artifactPatterns" rows={3} defaultValue={joinPatterns(editing.artifactPatterns)} required /></Field>
-              <Field label="Manifest/publish pointer" hint="Các file này luôn upload cuối"><textarea name="manifestPatterns" rows={3} defaultValue={joinPatterns(editing.manifestPatterns)} required /></Field>
+              <Field label="Artifact patterns" hint="Phân cách bằng dấu phẩy, ; hoặc xuống dòng">
+                <textarea
+                  name="artifactPatterns"
+                  rows={3}
+                  defaultValue={joinPatterns(editing.artifactPatterns)}
+                  required
+                />
+              </Field>
+              <Field label="Manifest/publish pointer" hint="Các file này luôn upload cuối">
+                <textarea
+                  name="manifestPatterns"
+                  rows={3}
+                  defaultValue={joinPatterns(editing.manifestPatterns)}
+                  required
+                />
+              </Field>
             </div>
-            <Field label="Tài khoản R2" hint="Chọn tài khoản đã lưu; để ENV / CI nếu máy build tự cấp R2_* environment variables.">
-              <select name="r2CredentialProfileId" defaultValue={r2BindingByApplication.get(editing.applicationId) ?? ""}>
+            <Field
+              label="Tài khoản R2"
+              hint="Chọn tài khoản đã lưu; để ENV / CI nếu máy build tự cấp R2_* environment variables."
+            >
+              <select
+                name="r2CredentialProfileId"
+                defaultValue={r2BindingByApplication.get(editing.applicationId) ?? ""}
+              >
                 <option value="">ENV / CI fallback</option>
-                {r2State.profiles.map((profile) => <option value={profile.id} key={profile.id}>{profile.name} · {profile.accountId}</option>)}
+                {r2State.profiles.map((profile) => (
+                  <option value={profile.id} key={profile.id}>
+                    {profile.name} · {profile.accountId}
+                  </option>
+                ))}
               </select>
             </Field>
             <div className="form-grid two">
-              <Field label="R2 bucket"><input name="r2Bucket" defaultValue={editing.r2Bucket} required /></Field>
-              <Field label="R2 prefix"><input name="r2Prefix" defaultValue={editing.r2Prefix} placeholder="Để trống nếu publish ở root bucket" /></Field>
+              <Field label="R2 bucket">
+                <input name="r2Bucket" defaultValue={editing.r2Bucket} required />
+              </Field>
+              <Field label="R2 prefix">
+                <input
+                  name="r2Prefix"
+                  defaultValue={editing.r2Prefix}
+                  placeholder="Để trống nếu publish ở root bucket"
+                />
+              </Field>
             </div>
             <div className="modal-actions">
-              <button className="button ghost" type="button" onClick={() => setEditing(null)}>Hủy</button>
-              <button className="button primary" type="submit" disabled={Boolean(busy)}><CheckIcon size={17} /> {busy === "save-external-profile" ? "Đang lưu…" : "Lưu cấu hình"}</button>
+              <button className="button ghost" type="button" onClick={() => setEditing(null)}>
+                Hủy
+              </button>
+              <button className="button primary" type="submit" disabled={Boolean(busy)}>
+                <CheckIcon size={17} /> {busy === "save-external-profile" ? "Đang lưu…" : "Lưu cấu hình"}
+              </button>
             </div>
           </form>
         </Modal>
@@ -544,17 +857,44 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
           onClose={() => setEditingR2(null)}
         >
           <form className="modal-form" onSubmit={(event) => void saveR2Profile(event)}>
-            <Field label="Tên tài khoản"><input name="name" defaultValue={editingR2.name} placeholder="Ví dụ: Beauty Salon" required /></Field>
-            <Field label="Account ID"><input name="accountId" defaultValue={editingR2.accountId} autoComplete="off" required /></Field>
-            <Field label="Access Key ID" hint={editingR2.id ? `Đang lưu ${editingR2.accessKeyPreview}. Để trống nếu không đổi.` : undefined}>
-              <input name="accessKeyId" autoComplete="off" required={!editingR2.id} placeholder={editingR2.id ? "Để trống để giữ key cũ" : "R2 Access Key ID"} />
+            <Field label="Tên tài khoản">
+              <input name="name" defaultValue={editingR2.name} placeholder="Ví dụ: Beauty Salon" required />
             </Field>
-            <Field label="Secret Access Key" hint={editingR2.id && editingR2.hasSecret ? "Secret đã được lưu. Để trống nếu không đổi." : undefined}>
-              <input name="secretAccessKey" type="password" autoComplete="new-password" required={!editingR2.id} placeholder={editingR2.id ? "Để trống để giữ secret cũ" : "R2 Secret Access Key"} />
+            <Field label="Account ID">
+              <input name="accountId" defaultValue={editingR2.accountId} autoComplete="off" required />
+            </Field>
+            <Field
+              label="Access Key ID"
+              hint={editingR2.id ? `Đang lưu ${editingR2.accessKeyPreview}. Để trống nếu không đổi.` : undefined}
+            >
+              <input
+                name="accessKeyId"
+                autoComplete="off"
+                required={!editingR2.id}
+                placeholder={editingR2.id ? "Để trống để giữ key cũ" : "R2 Access Key ID"}
+              />
+            </Field>
+            <Field
+              label="Secret Access Key"
+              hint={
+                editingR2.id && editingR2.hasSecret ? "Secret đã được lưu. Để trống nếu không đổi." : undefined
+              }
+            >
+              <input
+                name="secretAccessKey"
+                type="password"
+                autoComplete="new-password"
+                required={!editingR2.id}
+                placeholder={editingR2.id ? "Để trống để giữ secret cũ" : "R2 Secret Access Key"}
+              />
             </Field>
             <div className="modal-actions">
-              <button className="button ghost" type="button" onClick={() => setEditingR2(null)}>Hủy</button>
-              <button className="button primary" type="submit" disabled={Boolean(busy)}><CheckIcon size={17} /> {busy === "save-r2-profile" ? "Đang lưu…" : "Lưu tài khoản R2"}</button>
+              <button className="button ghost" type="button" onClick={() => setEditingR2(null)}>
+                Hủy
+              </button>
+              <button className="button primary" type="submit" disabled={Boolean(busy)}>
+                <CheckIcon size={17} /> {busy === "save-r2-profile" ? "Đang lưu…" : "Lưu tài khoản R2"}
+              </button>
             </div>
           </form>
         </Modal>
