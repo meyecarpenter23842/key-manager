@@ -1,6 +1,9 @@
 use std::{
-    fs,
+    fs::{self, OpenOptions},
+    io::Write,
     path::{Path, PathBuf},
+    process,
+    time::{SystemTime, UNIX_EPOCH},
 };
 use tauri::{AppHandle, Manager};
 
@@ -13,10 +16,13 @@ pub(crate) fn resolve_or_create(app: &AppHandle) -> Result<String, String> {
     let key = if path.is_file() {
         load_secret(&path)?
     } else {
-        let mut key = vec![0u8; KEY_BYTES];
-        os_random(&mut key)?;
-        persist_secret(&path, &key)?;
-        key
+        let mut generated = vec![0u8; KEY_BYTES];
+        os_random(&mut generated)?;
+        if persist_secret_if_absent(&path, &generated)? {
+            generated
+        } else {
+            load_secret(&path)?
+        }
     };
 
     if key.len() != KEY_BYTES {
@@ -50,45 +56,47 @@ fn load_secret(path: &Path) -> Result<Vec<u8>, String> {
     dpapi_unprotect(&encrypted)
 }
 
-fn persist_secret(path: &Path, key: &[u8]) -> Result<(), String> {
+fn persist_secret_if_absent(path: &Path, key: &[u8]) -> Result<bool, String> {
     let encrypted = dpapi_protect(key)?;
     let contents = format!("{SECRET_HEADER}\n{}\n", hex_encode(&encrypted));
-    write_atomic(path, contents.as_bytes())
+    write_new_atomic(path, contents.as_bytes())
 }
 
-fn write_atomic(path: &Path, contents: &[u8]) -> Result<(), String> {
+fn write_new_atomic(path: &Path, contents: &[u8]) -> Result<bool, String> {
     let parent = path
         .parent()
         .ok_or_else(|| "LICENSE_KEY_SECRET_PATH_INVALID".to_string())?;
     fs::create_dir_all(parent)
         .map_err(|error| format!("LICENSE_KEY_SECRET_DIR_CREATE_FAILED: {error}"))?;
 
-    let temporary = path.with_extension("dat.tmp");
-    let backup = path.with_extension("dat.bak");
-    fs::write(&temporary, contents)
-        .map_err(|error| format!("LICENSE_KEY_SECRET_WRITE_FAILED: {error}"))?;
-
-    if backup.exists() {
-        let _ = fs::remove_file(&backup);
-    }
-    let had_original = path.exists();
-    if had_original {
-        fs::rename(path, &backup)
-            .map_err(|error| format!("LICENSE_KEY_SECRET_BACKUP_FAILED: {error}"))?;
-    }
-
-    if let Err(error) = fs::rename(&temporary, path) {
-        if had_original {
-            let _ = fs::rename(&backup, path);
-        }
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| format!("LICENSE_KEY_SECRET_CLOCK_FAILED: {error}"))?
+        .as_nanos();
+    let temporary = parent.join(format!(".{SECRET_FILE}.{}.{}.tmp", process::id(), stamp));
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temporary)
+        .map_err(|error| format!("LICENSE_KEY_SECRET_TEMP_CREATE_FAILED: {error}"))?;
+    if let Err(error) = file.write_all(contents).and_then(|_| file.sync_all()) {
+        drop(file);
         let _ = fs::remove_file(&temporary);
-        return Err(format!("LICENSE_KEY_SECRET_COMMIT_FAILED: {error}"));
+        return Err(format!("LICENSE_KEY_SECRET_WRITE_FAILED: {error}"));
     }
+    drop(file);
 
-    if had_original {
-        let _ = fs::remove_file(&backup);
+    match fs::rename(&temporary, path) {
+        Ok(()) => Ok(true),
+        Err(_) if path.is_file() => {
+            let _ = fs::remove_file(&temporary);
+            Ok(false)
+        }
+        Err(error) => {
+            let _ = fs::remove_file(&temporary);
+            Err(format!("LICENSE_KEY_SECRET_COMMIT_FAILED: {error}"))
+        }
     }
-    Ok(())
 }
 
 fn hex_encode(bytes: &[u8]) -> String {
@@ -310,5 +318,21 @@ mod tests {
         let encrypted = super::dpapi_protect(&secret).unwrap();
         assert_ne!(encrypted, secret);
         assert_eq!(super::dpapi_unprotect(&encrypted).unwrap(), secret);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn secret_commit_never_overwrites_existing_secret() {
+        let mut path = std::env::temp_dir();
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        path.push(format!("key-manager-license-secret-{stamp}.dat"));
+
+        assert!(super::write_new_atomic(&path, b"first").unwrap());
+        assert!(!super::write_new_atomic(&path, b"second").unwrap());
+        assert_eq!(std::fs::read(&path).unwrap(), b"first");
+        let _ = std::fs::remove_file(path);
     }
 }
