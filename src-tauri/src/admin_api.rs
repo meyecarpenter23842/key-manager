@@ -16,6 +16,7 @@ const API_HOST: &str = "127.0.0.1";
 const API_PORT: u16 = 3101;
 const API_ORIGINS: &str = "http://localhost:1420,http://tauri.localhost";
 const ENV_FILE_NAME: &str = "admin-api.env";
+const LICENSE_KEY_ENCRYPTION_ENV: &str = "LICENSE_KEY_ENCRYPTION_KEY";
 #[cfg(windows)]
 const BUNDLE_IDENTIFIER: &str = "com.keymanager.desktop";
 #[cfg(windows)]
@@ -95,6 +96,15 @@ fn ensure_running_inner(
         "ADMIN_API_ALLOWED_ORIGINS".to_string(),
         API_ORIGINS.to_string(),
     );
+
+    if !runtime_env.contains_key(LICENSE_KEY_ENCRYPTION_ENV)
+        && std::env::var_os(LICENSE_KEY_ENCRYPTION_ENV).is_none()
+    {
+        runtime_env.insert(
+            LICENSE_KEY_ENCRYPTION_ENV.to_string(),
+            crate::license_key_secret::resolve_or_create(app)?,
+        );
+    }
 
     if !runtime_env.contains_key("DATABASE_URL") && std::env::var_os("DATABASE_URL").is_none() {
         let attempted = attempted_env_paths
