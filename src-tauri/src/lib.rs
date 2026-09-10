@@ -107,6 +107,33 @@ fn configure_admin_api(app: AppHandle, database_url: String) -> Result<(), Strin
     write_text_atomic(&config_path, &updated)
 }
 
+fn safe_release_segment(raw: &str) -> Option<&str> {
+    let normalized = raw.trim().trim_start_matches('v');
+    (!normalized.is_empty()
+        && normalized != "."
+        && normalized != ".."
+        && !normalized.contains('+')
+        && normalized
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || ".-_".contains(character)))
+    .then_some(normalized)
+}
+
+fn read_optional_json_version(path: &Path) -> Result<Option<String>, String> {
+    if !path.is_file() {
+        return Ok(None);
+    }
+    let raw = fs::read_to_string(path)
+        .map_err(|error| format!("RELEASE_METADATA_READ_FAILED: {}: {error}", path.display()))?;
+    let value: serde_json::Value = serde_json::from_str(&raw)
+        .map_err(|error| format!("RELEASE_METADATA_PARSE_FAILED: {}: {error}", path.display()))?;
+    Ok(value
+        .get("version")
+        .and_then(serde_json::Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .map(ToString::to_string))
+}
+
 #[tauri::command]
 fn package_key_manager_release_safe(
     app: AppHandle,
@@ -114,15 +141,8 @@ fn package_key_manager_release_safe(
     release_notes: String,
 ) -> Result<release_manager::PackageResult, String> {
     let config = release_manager::get_release_manager_config(app.clone())?;
-    let normalized = new_version.trim().trim_start_matches('v');
-    let safe_segment = !normalized.is_empty()
-        && normalized != "."
-        && normalized != ".."
-        && normalized
-            .chars()
-            .all(|character| character.is_ascii_alphanumeric() || ".-_".contains(character));
-    let version_dir =
-        safe_segment.then(|| PathBuf::from(&config.key_manager_update_dir).join(normalized));
+    let version_dir = safe_release_segment(&new_version)
+        .map(|version| PathBuf::from(&config.key_manager_update_dir).join(version));
     let existed_before = version_dir.as_ref().is_some_and(|path| path.exists());
 
     let result = release_manager_v2::package_key_manager_release(app, new_version, release_notes);
@@ -138,6 +158,47 @@ fn package_key_manager_release_safe(
         }
     }
     result
+}
+
+#[tauri::command]
+fn delete_key_manager_draft_release(app: AppHandle, version: String) -> Result<(), String> {
+    let version = safe_release_segment(&version)
+        .ok_or_else(|| "RELEASE_VERSION_INVALID: unsafe release version".to_string())?
+        .to_string();
+    let config = release_manager::get_release_manager_config(app.clone())?;
+    let update_root = PathBuf::from(&config.key_manager_update_dir);
+    let version_dir = update_root.join(&version);
+
+    if !version_dir.is_dir() {
+        return Err(format!(
+            "RELEASE_NOT_FOUND: {} does not exist",
+            version_dir.display()
+        ));
+    }
+
+    if app.package_info().version.to_string() == version {
+        return Err("RELEASE_DELETE_FORBIDDEN: cannot delete the running application version".to_string());
+    }
+
+    if read_optional_json_version(&update_root.join("latest.json"))?.as_deref()
+        == Some(version.as_str())
+    {
+        return Err("RELEASE_DELETE_FORBIDDEN: cannot delete the version referenced by latest.json".to_string());
+    }
+
+    let source_version_file = PathBuf::from(&config.key_manager_source_dir)
+        .join("src-tauri")
+        .join("tauri.conf.json");
+    if read_optional_json_version(&source_version_file)?.as_deref() == Some(version.as_str()) {
+        return Err("RELEASE_DELETE_FORBIDDEN: cannot delete the current source version".to_string());
+    }
+
+    fs::remove_dir_all(&version_dir).map_err(|error| {
+        format!(
+            "RELEASE_DELETE_FAILED: {}: {error}",
+            version_dir.display()
+        )
+    })
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -156,6 +217,7 @@ pub fn run() {
             release_manager::get_release_manager_config,
             release_manager::save_release_manager_config,
             package_key_manager_release_safe,
+            delete_key_manager_draft_release,
             release_manager::check_key_manager_update,
             release_manager::install_key_manager_update,
             release_manager::package_external_application
@@ -173,7 +235,7 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{upsert_env_setting, validate_database_url};
+    use super::{safe_release_segment, upsert_env_setting, validate_database_url};
 
     #[test]
     fn database_url_validation_accepts_postgres_urls_only() {
@@ -191,5 +253,13 @@ mod tests {
         assert!(updated.contains("SECRET=value"));
         assert!(updated.contains("DATABASE_URL=postgresql://new/db"));
         assert_eq!(updated.matches("DATABASE_URL=").count(), 1);
+    }
+
+    #[test]
+    fn release_segment_rejects_path_traversal_and_build_metadata() {
+        assert_eq!(safe_release_segment(" v0.1.1 "), Some("0.1.1"));
+        assert_eq!(safe_release_segment("0.1.1-rc.1"), Some("0.1.1-rc.1"));
+        assert_eq!(safe_release_segment("../0.1.1"), None);
+        assert_eq!(safe_release_segment("0.1.1+local"), None);
     }
 }
