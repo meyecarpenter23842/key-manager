@@ -32,6 +32,21 @@
 .release-update-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 12px; }
 .r2-secret-note { margin-bottom: 14px; padding: 12px 14px; border: 1px solid #f0dfbd; border-radius: 10px; background: #fffaf0; color: #78571d; font-size: 12px; line-height: 1.55; }
 .r2-secret-note code { font-weight: 700; }
+.r2-vault { margin-bottom: 16px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--soft); }
+.r2-vault-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
+.r2-vault-heading > div { min-width: 0; }
+.r2-vault-heading strong, .r2-vault-heading small { display: block; }
+.r2-vault-heading strong { font-size: 13px; }
+.r2-vault-heading small { margin-top: 4px; color: var(--muted); font-size: 11px; line-height: 1.45; }
+.r2-profile-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.r2-profile-card { display: flex; align-items: center; justify-content: space-between; gap: 14px; min-width: 0; padding: 12px 13px; border: 1px solid var(--line); border-radius: 11px; background: #fff; }
+.r2-profile-main { min-width: 0; }
+.r2-profile-main strong, .r2-profile-main small, .r2-profile-main span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.r2-profile-main strong { font-size: 13px; }
+.r2-profile-main small { margin-top: 3px; color: var(--muted); font-size: 11px; }
+.r2-profile-main span { margin-top: 6px; color: #6a50df; font-size: 10px; font-weight: 750; }
+.r2-profile-actions { display: flex; flex: none; align-items: center; gap: 7px; }
+.r2-profile-empty { padding: 14px; border: 1px dashed var(--line); border-radius: 10px; background: #fff; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .release-app-list { display: grid; gap: 8px; }
 .release-app-row { display: grid; grid-template-columns: minmax(220px, 1.1fr) minmax(220px, 1fr) auto; align-items: center; gap: 16px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
 .release-profile-summary { min-width: 0; }
@@ -52,6 +67,7 @@
   .release-local-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .release-local-form .field:last-of-type { grid-column: 1 / -1; }
   .release-status-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .r2-profile-grid { grid-template-columns: minmax(0, 1fr); }
   .release-app-row { grid-template-columns: minmax(220px, 1fr); }
   .release-row-actions { justify-content: flex-start; }
   .release-conflict { align-items: stretch; flex-direction: column; }

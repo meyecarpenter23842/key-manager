@@ -1,3 +1,4 @@
+use crate::r2_credentials;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
@@ -309,6 +310,19 @@ pub(crate) fn package_external_application(
         .ok_or_else(|| "RELEASE_PROFILE_NOT_FOUND: configure this application first".to_string())?;
     validate_external_profile(&profile)?;
 
+    // Resolve credentials before starting a potentially expensive build. A bound
+    // DPAPI profile wins; no binding preserves the existing CI/env fallback.
+    let credential_profile = r2_credentials::resolve_for_application(&app, &application_id)?;
+    if credential_profile.is_none() {
+        for required in [R2_ACCOUNT_ENV, R2_ACCESS_ENV, R2_SECRET_ENV] {
+            if std::env::var_os(required).is_none() {
+                return Err(format!(
+                    "R2_CREDENTIAL_MISSING: no saved R2 profile is selected and environment variable {required} is not set"
+                ));
+            }
+        }
+    }
+
     let source = canonical_existing_dir(Path::new(&profile.source_dir), "application source")?;
     let output_dir = resolve_path(&source, &profile.output_dir);
     let build = run_shell(&profile.build_command, &source)?;
@@ -348,14 +362,6 @@ pub(crate) fn package_external_application(
     }
 
     let uploader = resource_file(&app, "r2-upload.mjs")?;
-    for required in [R2_ACCOUNT_ENV, R2_ACCESS_ENV, R2_SECRET_ENV] {
-        if std::env::var_os(required).is_none() {
-            return Err(format!(
-                "R2_CREDENTIAL_MISSING: environment variable {required} is not set"
-            ));
-        }
-    }
-
     let mut command = Command::new("node");
     command.arg(uploader);
     command.arg("--bucket").arg(&profile.r2_bucket);
@@ -365,6 +371,13 @@ pub(crate) fn package_external_application(
     }
     for artifact in &artifacts {
         command.arg("--file").arg(artifact);
+    }
+    if let Some(credentials) = credential_profile {
+        // Secrets are scoped to the uploader child only. The app process and the
+        // build command never receive them as process-wide environment values.
+        command.env(R2_ACCOUNT_ENV, credentials.account_id);
+        command.env(R2_ACCESS_ENV, credentials.access_key_id);
+        command.env(R2_SECRET_ENV, credentials.secret_access_key);
     }
     let upload = command
         .current_dir(&source)

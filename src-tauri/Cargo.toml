@@ -1,6 +1,6 @@
 [package]
 name = "key-manager"
-version = "0.1.0"
+version = "0.1.1"
 description = "Key Manager desktop administration application"
 authors = ["Key Manager"]
 edition = "2021"

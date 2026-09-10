@@ -6,19 +6,35 @@ import { CheckIcon, RefreshIcon } from "./icons";
 import { PackageIcon, UploadIcon } from "./releaseIcons";
 import type { Application } from "./types";
 import {
+  bindR2CredentialProfile,
   checkKeyManagerUpdate,
   deleteKeyManagerDraftRelease,
+  deleteR2CredentialProfile,
   getReleaseManagerConfig,
   installKeyManagerUpdate,
+  listR2CredentialProfiles,
   packageExternalApplication,
   packageKeyManager,
+  saveR2CredentialProfile,
   saveReleaseManagerConfig,
   type ExternalReleaseProfile,
   type PackageResult,
+  type R2CredentialProfileSummary,
+  type R2CredentialState,
   type ReleaseManagerConfig,
   type SelfUpdateStatus,
 } from "./releaseManager";
 import { formatFileSize, joinPatterns, nextPatchVersion, splitPatterns } from "./releaseUi";
+
+interface R2CredentialEditor {
+  id: string | null;
+  name: string;
+  accountId: string;
+  accessKeyPreview: string;
+  hasSecret: boolean;
+}
+
+const emptyR2State: R2CredentialState = { profiles: [], bindings: [] };
 
 function blankProfile(application: Application): ExternalReleaseProfile {
   return {
@@ -36,6 +52,20 @@ function blankProfile(application: Application): ExternalReleaseProfile {
   };
 }
 
+function blankR2Editor(): R2CredentialEditor {
+  return { id: null, name: "", accountId: "", accessKeyPreview: "", hasSecret: false };
+}
+
+function editorFromR2Profile(profile: R2CredentialProfileSummary): R2CredentialEditor {
+  return {
+    id: profile.id,
+    name: profile.name,
+    accountId: profile.accountId,
+    accessKeyPreview: profile.accessKeyPreview,
+    hasSecret: profile.hasSecret,
+  };
+}
+
 function resultSummary(result: PackageResult): string {
   const files = result.artifacts.map((artifact) => `${artifact.name} (${formatFileSize(artifact.size)})`).join("\n");
   return `${result.appCode} ${result.version}\n${result.destination}\n${files}\n\n${result.log}`.trim();
@@ -48,11 +78,13 @@ function errorMessage(error: unknown): string {
 export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler; notify: Notify }) {
   const [config, setConfig] = useState<ReleaseManagerConfig | null>(null);
   const [applications, setApplications] = useState<Application[]>([]);
+  const [r2State, setR2State] = useState<R2CredentialState>(emptyR2State);
   const [update, setUpdate] = useState<SelfUpdateStatus | null>(null);
   const [newVersion, setNewVersion] = useState("");
   const [releaseNotes, setReleaseNotes] = useState("");
   const [conflictVersion, setConflictVersion] = useState<string | null>(null);
   const [editing, setEditing] = useState<ExternalReleaseProfile | null>(null);
+  const [editingR2, setEditingR2] = useState<R2CredentialEditor | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [log, setLog] = useState("");
 
@@ -60,11 +92,16 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
     void Promise.all([
       getReleaseManagerConfig(),
       listApplications({ limit: 100, offset: 0 }),
+      listR2CredentialProfiles().catch((error) => {
+        onError(error instanceof Error ? error : new Error(String(error)));
+        return emptyR2State;
+      }),
       checkKeyManagerUpdate().catch(() => null),
     ])
-      .then(([loadedConfig, loadedApplications, loadedUpdate]) => {
+      .then(([loadedConfig, loadedApplications, loadedR2State, loadedUpdate]) => {
         setConfig(loadedConfig);
         setApplications(loadedApplications.applications);
+        setR2State(loadedR2State);
         setUpdate(loadedUpdate);
         setNewVersion((current) => current || nextPatchVersion(loadedUpdate?.currentVersion));
       })
@@ -75,6 +112,30 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
     () => new Map((config?.externalProfiles ?? []).map((profile) => [profile.applicationId, profile])),
     [config],
   );
+
+  const r2ProfileById = useMemo(
+    () => new Map(r2State.profiles.map((profile) => [profile.id, profile])),
+    [r2State.profiles],
+  );
+
+  const r2BindingByApplication = useMemo(
+    () => new Map(r2State.bindings.map((binding) => [binding.applicationId, binding.credentialProfileId])),
+    [r2State.bindings],
+  );
+
+  const r2UsageCount = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const binding of r2State.bindings) {
+      counts.set(binding.credentialProfileId, (counts.get(binding.credentialProfileId) ?? 0) + 1);
+    }
+    return counts;
+  }, [r2State.bindings]);
+
+  async function refreshR2State() {
+    const next = await listR2CredentialProfiles();
+    setR2State(next);
+    return next;
+  }
 
   async function saveConfig(next = config) {
     if (!next) return;
@@ -176,11 +237,66 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
       r2Bucket: String(data.get("r2Bucket") || "").trim(),
       r2Prefix: String(data.get("r2Prefix") || "").trim(),
     };
+    const selectedR2ProfileId = String(data.get("r2CredentialProfileId") || "").trim() || null;
     const externalProfiles = config.externalProfiles.filter((item) => item.applicationId !== profile.applicationId);
     const next = { ...config, externalProfiles: [...externalProfiles, profile] };
-    setConfig(next);
-    setEditing(null);
-    await saveConfig(next);
+
+    try {
+      setBusy("save-external-profile");
+      const saved = await saveReleaseManagerConfig(next);
+      await bindR2CredentialProfile(profile.applicationId, selectedR2ProfileId);
+      setConfig(saved);
+      await refreshR2State();
+      setEditing(null);
+      notify(`Đã lưu cấu hình ${profile.appCode}`);
+    } catch (error) {
+      onError(error instanceof Error ? error : new Error(String(error)));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function saveR2Profile(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editingR2) return;
+    const data = new FormData(event.currentTarget);
+    try {
+      setBusy("save-r2-profile");
+      await saveR2CredentialProfile({
+        id: editingR2.id,
+        name: String(data.get("name") || "").trim(),
+        accountId: String(data.get("accountId") || "").trim(),
+        accessKeyId: String(data.get("accessKeyId") || "").trim(),
+        secretAccessKey: String(data.get("secretAccessKey") || "").trim(),
+      });
+      await refreshR2State();
+      setEditingR2(null);
+      notify(editingR2.id ? "Đã cập nhật tài khoản R2" : "Đã thêm tài khoản R2");
+    } catch (error) {
+      onError(error instanceof Error ? error : new Error(String(error)));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function deleteR2Profile(profile: R2CredentialProfileSummary) {
+    const usedBy = r2UsageCount.get(profile.id) ?? 0;
+    if (usedBy > 0) {
+      notify("Không thể xóa tài khoản R2 đang được sử dụng", `Hãy đổi tài khoản R2 cho ${usedBy} ứng dụng đang dùng profile này trước.`);
+      return;
+    }
+    if (!window.confirm(`Xóa tài khoản R2 “${profile.name}”? Secret đã lưu trên máy này cũng sẽ bị xóa.`)) return;
+
+    try {
+      setBusy(`delete-r2:${profile.id}`);
+      await deleteR2CredentialProfile(profile.id);
+      await refreshR2State();
+      notify(`Đã xóa tài khoản R2 ${profile.name}`);
+    } catch (error) {
+      onError(error instanceof Error ? error : new Error(String(error)));
+    } finally {
+      setBusy(null);
+    }
   }
 
   async function packageExternal(application: Application) {
@@ -312,12 +428,52 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
           </div>
           <span className="release-mode r2">R2</span>
         </div>
+
         <div className="r2-secret-note">
-          R2 secret không lưu trong UI. Máy build phải có <code>R2_ACCOUNT_ID</code>, <code>R2_ACCESS_KEY_ID</code>, <code>R2_SECRET_ACCESS_KEY</code>.
+          Tài khoản R2 được lưu riêng trên máy này và mã hóa bằng Windows DPAPI. Secret không trả lại frontend sau khi lưu. Nếu một ứng dụng không chọn tài khoản R2, Key Manager mới dùng <code>R2_ACCOUNT_ID</code>, <code>R2_ACCESS_KEY_ID</code>, <code>R2_SECRET_ACCESS_KEY</code> làm fallback cho CI.
         </div>
+
+        <div className="r2-vault">
+          <div className="r2-vault-heading">
+            <div>
+              <strong>Tài khoản R2</strong>
+              <small>Thêm nhiều tài khoản rồi chọn đúng tài khoản trong cấu hình từng ứng dụng.</small>
+            </div>
+            <button className="button ghost" type="button" disabled={Boolean(busy)} onClick={() => setEditingR2(blankR2Editor())}>
+              + Thêm tài khoản R2
+            </button>
+          </div>
+
+          {r2State.profiles.length ? (
+            <div className="r2-profile-grid">
+              {r2State.profiles.map((profile) => {
+                const usedBy = r2UsageCount.get(profile.id) ?? 0;
+                return (
+                  <div className="r2-profile-card" key={profile.id}>
+                    <div className="r2-profile-main">
+                      <strong>{profile.name}</strong>
+                      <small>Account: {profile.accountId}</small>
+                      <small>Access key: {profile.accessKeyPreview} · Secret: {profile.hasSecret ? "Đã lưu" : "Chưa có"}</small>
+                      <span>{usedBy ? `${usedBy} ứng dụng đang dùng` : "Chưa gắn ứng dụng"}</span>
+                    </div>
+                    <div className="r2-profile-actions">
+                      <button className="button ghost" type="button" disabled={Boolean(busy)} onClick={() => setEditingR2(editorFromR2Profile(profile))}>Sửa</button>
+                      <button className="button danger-soft" type="button" disabled={Boolean(busy) || usedBy > 0} onClick={() => void deleteR2Profile(profile)}>Xóa</button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="r2-profile-empty">Chưa có tài khoản R2. Thêm tài khoản đầu tiên để không phải cấu hình secret trong Windows Environment.</div>
+          )}
+        </div>
+
         <div className="release-app-list">
           {applications.map((application) => {
             const profile = profileByApplication.get(application.id);
+            const credentialId = r2BindingByApplication.get(application.id);
+            const credential = credentialId ? r2ProfileById.get(credentialId) : null;
             return (
               <div className="release-app-row" key={application.id}>
                 <div className="cell-title">
@@ -325,7 +481,13 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
                   <div><strong>{application.name}</strong><small>{application.appCode} · {application.currentVersion || "chưa có version"}</small></div>
                 </div>
                 <div className="release-profile-summary">
-                  {profile ? <><strong>{profile.r2Bucket}</strong><small>{profile.buildCommand}</small></> : <span>Chưa cấu hình build/R2</span>}
+                  {profile ? (
+                    <>
+                      <strong>{profile.r2Bucket}</strong>
+                      <small>{credential ? `R2: ${credential.name}` : credentialId ? "R2 profile không còn tồn tại" : "R2: ENV / CI fallback"}</small>
+                      <small>{profile.buildCommand}</small>
+                    </>
+                  ) : <span>Chưa cấu hình build/R2</span>}
                 </div>
                 <div className="release-row-actions">
                   <button className="button ghost" type="button" onClick={() => openProfile(application)}>Cấu hình</button>
@@ -357,13 +519,42 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
               <Field label="Artifact patterns" hint="Phân cách bằng dấu phẩy, ; hoặc xuống dòng"><textarea name="artifactPatterns" rows={3} defaultValue={joinPatterns(editing.artifactPatterns)} required /></Field>
               <Field label="Manifest/publish pointer" hint="Các file này luôn upload cuối"><textarea name="manifestPatterns" rows={3} defaultValue={joinPatterns(editing.manifestPatterns)} required /></Field>
             </div>
+            <Field label="Tài khoản R2" hint="Chọn tài khoản đã lưu; để ENV / CI nếu máy build tự cấp R2_* environment variables.">
+              <select name="r2CredentialProfileId" defaultValue={r2BindingByApplication.get(editing.applicationId) ?? ""}>
+                <option value="">ENV / CI fallback</option>
+                {r2State.profiles.map((profile) => <option value={profile.id} key={profile.id}>{profile.name} · {profile.accountId}</option>)}
+              </select>
+            </Field>
             <div className="form-grid two">
               <Field label="R2 bucket"><input name="r2Bucket" defaultValue={editing.r2Bucket} required /></Field>
-              <Field label="R2 prefix"><input name="r2Prefix" defaultValue={editing.r2Prefix} placeholder="page-auto" /></Field>
+              <Field label="R2 prefix"><input name="r2Prefix" defaultValue={editing.r2Prefix} placeholder="Để trống nếu publish ở root bucket" /></Field>
             </div>
             <div className="modal-actions">
               <button className="button ghost" type="button" onClick={() => setEditing(null)}>Hủy</button>
-              <button className="button primary" type="submit"><CheckIcon size={17} /> Lưu cấu hình</button>
+              <button className="button primary" type="submit" disabled={Boolean(busy)}><CheckIcon size={17} /> {busy === "save-external-profile" ? "Đang lưu…" : "Lưu cấu hình"}</button>
+            </div>
+          </form>
+        </Modal>
+      ) : null}
+
+      {editingR2 ? (
+        <Modal
+          title={editingR2.id ? `Sửa tài khoản R2 · ${editingR2.name}` : "Thêm tài khoản R2"}
+          subtitle="Credential được mã hóa bằng Windows DPAPI và chỉ dùng trên user Windows hiện tại."
+          onClose={() => setEditingR2(null)}
+        >
+          <form className="modal-form" onSubmit={(event) => void saveR2Profile(event)}>
+            <Field label="Tên tài khoản"><input name="name" defaultValue={editingR2.name} placeholder="Ví dụ: Beauty Salon" required /></Field>
+            <Field label="Account ID"><input name="accountId" defaultValue={editingR2.accountId} autoComplete="off" required /></Field>
+            <Field label="Access Key ID" hint={editingR2.id ? `Đang lưu ${editingR2.accessKeyPreview}. Để trống nếu không đổi.` : undefined}>
+              <input name="accessKeyId" autoComplete="off" required={!editingR2.id} placeholder={editingR2.id ? "Để trống để giữ key cũ" : "R2 Access Key ID"} />
+            </Field>
+            <Field label="Secret Access Key" hint={editingR2.id && editingR2.hasSecret ? "Secret đã được lưu. Để trống nếu không đổi." : undefined}>
+              <input name="secretAccessKey" type="password" autoComplete="new-password" required={!editingR2.id} placeholder={editingR2.id ? "Để trống để giữ secret cũ" : "R2 Secret Access Key"} />
+            </Field>
+            <div className="modal-actions">
+              <button className="button ghost" type="button" onClick={() => setEditingR2(null)}>Hủy</button>
+              <button className="button primary" type="submit" disabled={Boolean(busy)}><CheckIcon size={17} /> {busy === "save-r2-profile" ? "Đang lưu…" : "Lưu tài khoản R2"}</button>
             </div>
           </form>
         </Modal>
