@@ -95,6 +95,7 @@ export interface LicenseDevice {
 }
 
 export interface LicenseDetail extends License {
+  keyRevealAvailable: boolean;
   application: { id: string; name: string; appCode: string };
   customer: {
     id: string;
