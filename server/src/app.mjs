@@ -1,11 +1,12 @@
 import { Buffer } from "node:buffer";
-import { randomUUID } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import { createServer } from "node:http";
 import { URL } from "node:url";
 
 import { DeviceRepository } from "./device-repository.mjs";
 import { parseDeviceFilters } from "./devices.mjs";
 import { LicenseApiRepository } from "./license-api-repository.mjs";
+import { createLicenseKeyProtector } from "./license-key-crypto.mjs";
 import { PublicLicenseService } from "./license-service.mjs";
 import {
   generateLicenseKey,
@@ -150,13 +151,20 @@ function writeResourceNotFound(response, headers, resource) {
   );
 }
 
+function adminApiError(statusCode, errorCode, message) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  error.errorCode = errorCode;
+  return error;
+}
+
 function pathId(pathname, prefix) {
   const match = new RegExp(`^${prefix}/([^/]+)$`).exec(pathname);
   return match?.[1] ?? null;
 }
 
 function licensePath(pathname) {
-  const match = /^\/api\/admin\/v1\/licenses\/([^/]+)(?:\/(renew|revoke|reactivate|archive|device-limit))?$/.exec(
+  const match = /^\/api\/admin\/v1\/licenses\/([^/]+)(?:\/(reveal-key|renew|revoke|reactivate|archive|device-limit))?$/.exec(
     pathname,
   );
   if (!match) return null;
@@ -198,6 +206,7 @@ export function createAdminApiServer({
   deviceRepository = null,
   licenseApiRepository = null,
   licenseService = null,
+  licenseKeyEncryptionKey = null,
   publicRateLimiter = null,
   publicRateLimitMax = 120,
   publicRateLimitWindowMs = 60_000,
@@ -212,6 +221,7 @@ export function createAdminApiServer({
       licenseRepository: licenseApiRepository ?? new LicenseApiRepository(repository.pool),
       deviceRepository: devices,
     });
+  const licenseKeyProtector = createLicenseKeyProtector(licenseKeyEncryptionKey);
   const rateLimiter =
     publicRateLimiter ??
     createRateLimiter({ maxRequests: publicRateLimitMax, windowMs: publicRateLimitWindowMs });
@@ -637,11 +647,19 @@ export function createAdminApiServer({
             writeResourceNotFound(response, commonHeaders, "Application");
             return;
           }
+          if (!licenseKeyProtector) {
+            throw adminApiError(
+              503,
+              "LICENSE_KEY_ENCRYPTION_UNAVAILABLE",
+              "License key encryption is not configured",
+            );
+          }
           const licenseKey = generateLicenseKey(application.appCode);
           const license = await repository.createLicense({
             data,
             keyHash: hashLicenseKey(licenseKey),
             keyPreview: maskLicenseKey(licenseKey),
+            keyCiphertext: licenseKeyProtector.encrypt(licenseKey),
             actorAdminId: session.admin_id,
             requestId,
             ipAddress: clientIp(request),
@@ -665,7 +683,77 @@ export function createAdminApiServer({
               writeResourceNotFound(response, commonHeaders, "License");
               return;
             }
-            writeJson(response, 200, { license }, commonHeaders);
+            const keyMaterial = await repository.getLicenseKeyMaterial(licenseRoute.id);
+            writeJson(
+              response,
+              200,
+              {
+                license: {
+                  ...license,
+                  keyRevealAvailable: Boolean(keyMaterial?.licenseKeyCiphertext),
+                },
+              },
+              commonHeaders,
+            );
+            return;
+          }
+
+          if (licenseRoute.action === "reveal-key" && request.method === "POST") {
+            if (!requirePermission(response, commonHeaders, session, PERMISSIONS.LICENSE_KEY_REVEAL)) {
+              return;
+            }
+            const keyMaterial = await repository.getLicenseKeyMaterial(licenseRoute.id);
+            if (!keyMaterial) {
+              writeResourceNotFound(response, commonHeaders, "License");
+              return;
+            }
+            if (!keyMaterial.licenseKeyCiphertext) {
+              throw adminApiError(
+                409,
+                "LICENSE_KEY_UNAVAILABLE",
+                "Full key is unavailable for licenses created before encrypted key storage was enabled",
+              );
+            }
+            if (!licenseKeyProtector) {
+              throw adminApiError(
+                503,
+                "LICENSE_KEY_ENCRYPTION_UNAVAILABLE",
+                "License key encryption is not configured",
+              );
+            }
+
+            let licenseKey;
+            try {
+              licenseKey = licenseKeyProtector.decrypt(keyMaterial.licenseKeyCiphertext);
+            } catch {
+              throw adminApiError(
+                500,
+                "LICENSE_KEY_DECRYPT_FAILED",
+                "Stored license key could not be decrypted",
+              );
+            }
+
+            const decryptedHash = hashLicenseKey(licenseKey);
+            if (
+              !decryptedHash ||
+              !Buffer.isBuffer(keyMaterial.licenseKeyHash) ||
+              decryptedHash.length !== keyMaterial.licenseKeyHash.length ||
+              !timingSafeEqual(decryptedHash, keyMaterial.licenseKeyHash)
+            ) {
+              throw adminApiError(
+                500,
+                "LICENSE_KEY_INTEGRITY_FAILED",
+                "Stored license key failed its integrity check",
+              );
+            }
+
+            await repository.recordLicenseKeyReveal({
+              id: licenseRoute.id,
+              actorAdminId: session.admin_id,
+              requestId,
+              ipAddress: clientIp(request),
+            });
+            writeJson(response, 200, { licenseKey }, commonHeaders);
             return;
           }
 
