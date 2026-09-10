@@ -42,8 +42,12 @@ fn secret_path(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 fn load_secret(path: &Path) -> Result<Vec<u8>, String> {
-    let raw = fs::read_to_string(path)
-        .map_err(|error| format!("LICENSE_KEY_SECRET_READ_FAILED: {}: {error}", path.display()))?;
+    let raw = fs::read_to_string(path).map_err(|error| {
+        format!(
+            "LICENSE_KEY_SECRET_READ_FAILED: {}: {error}",
+            path.display()
+        )
+    })?;
     let mut lines = raw.lines();
     if lines.next() != Some(SECRET_HEADER) {
         return Err("LICENSE_KEY_SECRET_FORMAT_INVALID: unsupported header".to_string());
@@ -137,8 +141,10 @@ fn os_random(output: &mut [u8]) -> Result<(), String> {
 
 #[cfg(not(windows))]
 fn os_random(_output: &mut [u8]) -> Result<(), String> {
-    Err("LICENSE_KEY_SECRET_WINDOWS_REQUIRED: automatic secret provisioning requires Windows"
-        .to_string())
+    Err(
+        "LICENSE_KEY_SECRET_WINDOWS_REQUIRED: automatic secret provisioning requires Windows"
+            .to_string(),
+    )
 }
 
 #[cfg(windows)]
@@ -148,8 +154,10 @@ fn dpapi_protect(input: &[u8]) -> Result<Vec<u8>, String> {
 
 #[cfg(not(windows))]
 fn dpapi_protect(_input: &[u8]) -> Result<Vec<u8>, String> {
-    Err("LICENSE_KEY_SECRET_DPAPI_UNAVAILABLE: automatic secret provisioning requires Windows"
-        .to_string())
+    Err(
+        "LICENSE_KEY_SECRET_DPAPI_UNAVAILABLE: automatic secret provisioning requires Windows"
+            .to_string(),
+    )
 }
 
 #[cfg(windows)]
@@ -159,8 +167,10 @@ fn dpapi_unprotect(input: &[u8]) -> Result<Vec<u8>, String> {
 
 #[cfg(not(windows))]
 fn dpapi_unprotect(_input: &[u8]) -> Result<Vec<u8>, String> {
-    Err("LICENSE_KEY_SECRET_DPAPI_UNAVAILABLE: automatic secret provisioning requires Windows"
-        .to_string())
+    Err(
+        "LICENSE_KEY_SECRET_DPAPI_UNAVAILABLE: automatic secret provisioning requires Windows"
+            .to_string(),
+    )
 }
 
 #[cfg(windows)]
@@ -285,7 +295,9 @@ mod windows_crypto {
             ));
         }
         if output_blob.pb_data.is_null() {
-            return Err("LICENSE_KEY_SECRET_DPAPI_FAILED: Windows returned an empty buffer".to_string());
+            return Err(
+                "LICENSE_KEY_SECRET_DPAPI_FAILED: Windows returned an empty buffer".to_string(),
+            );
         }
 
         let output = unsafe {
