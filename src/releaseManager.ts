@@ -45,6 +45,32 @@ export interface SelfUpdateStatus {
   updateDir: string;
 }
 
+export interface R2CredentialProfileSummary {
+  id: string;
+  name: string;
+  accountId: string;
+  accessKeyPreview: string;
+  hasSecret: boolean;
+}
+
+export interface R2CredentialBindingSummary {
+  applicationId: string;
+  credentialProfileId: string;
+}
+
+export interface R2CredentialState {
+  profiles: R2CredentialProfileSummary[];
+  bindings: R2CredentialBindingSummary[];
+}
+
+export interface SaveR2CredentialProfileInput {
+  id: string | null;
+  name: string;
+  accountId: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+}
+
 export function getReleaseManagerConfig(): Promise<ReleaseManagerConfig> {
   return invoke("get_release_manager_config");
 }
@@ -71,4 +97,20 @@ export function installKeyManagerUpdate(): Promise<void> {
 
 export function packageExternalApplication(applicationId: string): Promise<PackageResult> {
   return invoke("package_external_application", { applicationId });
+}
+
+export function listR2CredentialProfiles(): Promise<R2CredentialState> {
+  return invoke("list_r2_credential_profiles");
+}
+
+export function saveR2CredentialProfile(input: SaveR2CredentialProfileInput): Promise<R2CredentialProfileSummary> {
+  return invoke("save_r2_credential_profile", { input });
+}
+
+export function deleteR2CredentialProfile(id: string): Promise<void> {
+  return invoke("delete_r2_credential_profile", { id });
+}
+
+export function bindR2CredentialProfile(applicationId: string, credentialProfileId: string | null): Promise<void> {
+  return invoke("bind_r2_credential_profile", { applicationId, credentialProfileId });
 }
