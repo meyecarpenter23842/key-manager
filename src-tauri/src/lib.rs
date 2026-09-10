@@ -177,28 +177,31 @@ fn delete_key_manager_draft_release(app: AppHandle, version: String) -> Result<(
     }
 
     if app.package_info().version.to_string() == version {
-        return Err("RELEASE_DELETE_FORBIDDEN: cannot delete the running application version".to_string());
+        return Err(
+            "RELEASE_DELETE_FORBIDDEN: cannot delete the running application version".to_string(),
+        );
     }
 
     if read_optional_json_version(&update_root.join("latest.json"))?.as_deref()
         == Some(version.as_str())
     {
-        return Err("RELEASE_DELETE_FORBIDDEN: cannot delete the version referenced by latest.json".to_string());
+        return Err(
+            "RELEASE_DELETE_FORBIDDEN: cannot delete the version referenced by latest.json"
+                .to_string(),
+        );
     }
 
     let source_version_file = PathBuf::from(&config.key_manager_source_dir)
         .join("src-tauri")
         .join("tauri.conf.json");
     if read_optional_json_version(&source_version_file)?.as_deref() == Some(version.as_str()) {
-        return Err("RELEASE_DELETE_FORBIDDEN: cannot delete the current source version".to_string());
+        return Err(
+            "RELEASE_DELETE_FORBIDDEN: cannot delete the current source version".to_string(),
+        );
     }
 
-    fs::remove_dir_all(&version_dir).map_err(|error| {
-        format!(
-            "RELEASE_DELETE_FAILED: {}: {error}",
-            version_dir.display()
-        )
-    })
+    fs::remove_dir_all(&version_dir)
+        .map_err(|error| format!("RELEASE_DELETE_FAILED: {}: {error}", version_dir.display()))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
