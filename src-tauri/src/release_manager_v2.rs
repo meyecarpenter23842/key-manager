@@ -39,8 +39,9 @@ impl SourceBackup {
         let mut files = Vec::new();
         for path in paths {
             if path.is_file() {
-                let content = fs::read(path)
-                    .map_err(|error| format!("SOURCE_BACKUP_READ_FAILED: {}: {error}", path.display()))?;
+                let content = fs::read(path).map_err(|error| {
+                    format!("SOURCE_BACKUP_READ_FAILED: {}: {error}", path.display())
+                })?;
                 files.push((path.clone(), content));
             }
         }
@@ -283,7 +284,9 @@ fn parse_version(value: &str) -> Result<ParsedVersion, String> {
         .map(|(left, right)| (left, Some(right)))
         .unwrap_or((value, None));
     if build.is_some_and(|part| !valid_identifiers(part)) {
-        return Err(format!("VERSION_INVALID: invalid build metadata in {value:?}"));
+        return Err(format!(
+            "VERSION_INVALID: invalid build metadata in {value:?}"
+        ));
     }
     let (core, prerelease) = core_and_pre
         .split_once('-')
@@ -300,7 +303,9 @@ fn parse_version(value: &str) -> Result<ParsedVersion, String> {
             || (part.len() > 1 && part.starts_with('0'))
             || !part.chars().all(|character| character.is_ascii_digit())
         {
-            return Err(format!("VERSION_INVALID: invalid numeric segment in {value:?}"));
+            return Err(format!(
+                "VERSION_INVALID: invalid numeric segment in {value:?}"
+            ));
         }
         part.parse::<u64>()
             .map_err(|_| format!("VERSION_INVALID: numeric segment is too large in {value:?}"))
@@ -378,7 +383,12 @@ fn read_json_top_level_version(path: &Path) -> Result<String, String> {
         .and_then(Value::as_str)
         .filter(|value| !value.trim().is_empty())
         .map(ToString::to_string)
-        .ok_or_else(|| format!("VERSION_FIELD_INVALID: {} has no string version", path.display()))
+        .ok_or_else(|| {
+            format!(
+                "VERSION_FIELD_INVALID: {} has no string version",
+                path.display()
+            )
+        })
 }
 
 fn write_json_top_level_version(path: &Path, old: &str, new: &str) -> Result<(), String> {
@@ -528,10 +538,7 @@ fn walk_installers(current: &Path, version: &str, files: &mut Vec<PathBuf>) -> R
             .file_name()
             .and_then(|value| value.to_str())
             .unwrap_or_default();
-        if path.is_file()
-            && name.to_ascii_lowercase().ends_with(".exe")
-            && name.contains(version)
-        {
+        if path.is_file() && name.to_ascii_lowercase().ends_with(".exe") && name.contains(version) {
             files.push(path);
         }
     }
@@ -569,8 +576,12 @@ fn verify_staged_manifest(root: &Path, manifest: &LocalUpdateManifest) -> Result
             ));
         }
         let path = root.join(&artifact.name);
-        let metadata = fs::metadata(&path)
-            .map_err(|error| format!("ARTIFACT_VERIFY_METADATA_FAILED: {}: {error}", path.display()))?;
+        let metadata = fs::metadata(&path).map_err(|error| {
+            format!(
+                "ARTIFACT_VERIFY_METADATA_FAILED: {}: {error}",
+                path.display()
+            )
+        })?;
         if metadata.len() != artifact.size {
             return Err(format!(
                 "ARTIFACT_SIZE_MISMATCH: {} expected {}, got {}",
