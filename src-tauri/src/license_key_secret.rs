@@ -64,14 +64,31 @@ fn write_atomic(path: &Path, contents: &[u8]) -> Result<(), String> {
         .map_err(|error| format!("LICENSE_KEY_SECRET_DIR_CREATE_FAILED: {error}"))?;
 
     let temporary = path.with_extension("dat.tmp");
+    let backup = path.with_extension("dat.bak");
     fs::write(&temporary, contents)
         .map_err(|error| format!("LICENSE_KEY_SECRET_WRITE_FAILED: {error}"))?;
-    if path.exists() {
-        fs::remove_file(path)
-            .map_err(|error| format!("LICENSE_KEY_SECRET_REPLACE_FAILED: {error}"))?;
+
+    if backup.exists() {
+        let _ = fs::remove_file(&backup);
     }
-    fs::rename(&temporary, path)
-        .map_err(|error| format!("LICENSE_KEY_SECRET_COMMIT_FAILED: {error}"))
+    let had_original = path.exists();
+    if had_original {
+        fs::rename(path, &backup)
+            .map_err(|error| format!("LICENSE_KEY_SECRET_BACKUP_FAILED: {error}"))?;
+    }
+
+    if let Err(error) = fs::rename(&temporary, path) {
+        if had_original {
+            let _ = fs::rename(&backup, path);
+        }
+        let _ = fs::remove_file(&temporary);
+        return Err(format!("LICENSE_KEY_SECRET_COMMIT_FAILED: {error}"));
+    }
+
+    if had_original {
+        let _ = fs::remove_file(&backup);
+    }
+    Ok(())
 }
 
 fn hex_encode(bytes: &[u8]) -> String {
