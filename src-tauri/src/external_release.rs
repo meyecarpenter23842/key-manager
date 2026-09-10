@@ -71,7 +71,8 @@ pub(crate) fn get_external_release_status(
     validate_profile(&profile)?;
     let source = canonical_existing_dir(Path::new(&profile.source_dir), "application source")?;
     let version_file = resolve_path(&source, &profile.version_file);
-    let current_version = normalize_semver(&read_json_string(&version_file, &profile.version_field)?)?;
+    let current_version =
+        normalize_semver(&read_json_string(&version_file, &profile.version_field)?)?;
     validate_flutter_version_mirror(&source, &current_version)?;
 
     Ok(ExternalReleaseStatus {
@@ -107,7 +108,8 @@ pub(crate) fn package_external_release(
 
     let source = canonical_existing_dir(Path::new(&profile.source_dir), "application source")?;
     let version_file = resolve_path(&source, &profile.version_file);
-    let current_version = normalize_semver(&read_json_string(&version_file, &profile.version_field)?)?;
+    let current_version =
+        normalize_semver(&read_json_string(&version_file, &profile.version_field)?)?;
     validate_flutter_version_mirror(&source, &current_version)?;
 
     let version = normalize_semver(&new_version)?;
@@ -169,9 +171,18 @@ pub(crate) fn package_external_release(
         .iter()
         .filter(|path| is_manifest(path, &profile.manifest_patterns))
         .count();
+
+    let release_artifacts = match collect_release_artifacts(&artifacts) {
+        Ok(release_artifacts) => release_artifacts,
+        Err(error) => return Err(with_rollback(log, "VALIDATE", error, &backup)),
+    };
     log.push(stage_ok(
         "VALIDATE",
-        &format!("{} files; {} publish pointer(s)", artifacts.len(), manifest_count),
+        &format!(
+            "{} files; {} publish pointer(s)",
+            artifacts.len(),
+            manifest_count
+        ),
     ));
 
     let ordered = order_uploads(&artifacts, &profile.manifest_patterns);
@@ -228,20 +239,6 @@ pub(crate) fn package_external_release(
         "COMPLETE",
         &format!("{} {} -> {}", profile.app_code, version, destination),
     ));
-
-    let release_artifacts = artifacts
-        .iter()
-        .map(|path| {
-            let metadata = fs::metadata(path).map_err(|error| {
-                format!("ARTIFACT_METADATA_FAILED: {}: {error}", path.display())
-            })?;
-            Ok(ReleaseArtifact {
-                name: file_name_string(path)?,
-                path: path.display().to_string(),
-                size: metadata.len(),
-            })
-        })
-        .collect::<Result<Vec<_>, String>>()?;
 
     Ok(PackageResult {
         app_code: profile.app_code,
@@ -358,6 +355,22 @@ fn validate_and_prepare_artifacts(
     selected.extend(manifests);
     selected.sort();
     Ok(selected)
+}
+
+fn collect_release_artifacts(paths: &[PathBuf]) -> Result<Vec<ReleaseArtifact>, String> {
+    paths
+        .iter()
+        .map(|path| {
+            let metadata = fs::metadata(path).map_err(|error| {
+                format!("ARTIFACT_METADATA_FAILED: {}: {error}", path.display())
+            })?;
+            Ok(ReleaseArtifact {
+                name: file_name_string(path)?,
+                path: path.display().to_string(),
+                size: metadata.len(),
+            })
+        })
+        .collect()
 }
 
 fn prepare_json_manifest(path: &Path, version: &str, release_notes: &str) -> Result<(), String> {
@@ -494,8 +507,9 @@ fn sync_flutter_pubspec(path: &Path, expected: &str, next: &str) -> Result<(), S
             updated.push_str(next);
             updated.push_str(&suffix);
             updated.push_str(&raw[end..]);
-            return fs::write(path, updated)
-                .map_err(|error| format!("VERSION_FILE_WRITE_FAILED: {}: {error}", path.display()));
+            return fs::write(path, updated).map_err(|error| {
+                format!("VERSION_FILE_WRITE_FAILED: {}: {error}", path.display())
+            });
         }
         offset += line.len();
     }
@@ -549,8 +563,8 @@ fn replace_json_string_field(
         .next()
         .filter(|value| !value.is_empty())
         .ok_or_else(|| "VERSION_FIELD_INVALID: field cannot be empty".to_string())?;
-    let key = serde_json::to_string(leaf)
-        .map_err(|error| format!("VERSION_FIELD_INVALID: {error}"))?;
+    let key =
+        serde_json::to_string(leaf).map_err(|error| format!("VERSION_FIELD_INVALID: {error}"))?;
     let mut candidates = Vec::new();
     for (index, _) in raw.match_indices(&key) {
         let after_key = index + key.len();
@@ -603,9 +617,14 @@ fn replace_json_string_field(
         }
         cursor += 1;
     }
-    let end = end.ok_or_else(|| format!("VERSION_FIELD_INVALID: unterminated JSON string in {}", path.display()))?;
-    let encoded = serde_json::to_string(next)
-        .map_err(|error| format!("VERSION_FIELD_INVALID: {error}"))?;
+    let end = end.ok_or_else(|| {
+        format!(
+            "VERSION_FIELD_INVALID: unterminated JSON string in {}",
+            path.display()
+        )
+    })?;
+    let encoded =
+        serde_json::to_string(next).map_err(|error| format!("VERSION_FIELD_INVALID: {error}"))?;
     let mut updated = String::with_capacity(raw.len() + encoded.len());
     updated.push_str(&raw[..start]);
     updated.push_str(&encoded);
@@ -625,7 +644,9 @@ struct ParsedSemver {
 fn normalize_semver(raw: &str) -> Result<String, String> {
     let version = raw.trim().trim_start_matches('v').to_string();
     if version.contains('+') {
-        return Err("VERSION_INVALID: build metadata (+...) is not supported for releases".to_string());
+        return Err(
+            "VERSION_INVALID: build metadata (+...) is not supported for releases".to_string(),
+        );
     }
     parse_semver(&version)?;
     Ok(version)
@@ -1052,9 +1073,15 @@ mod tests {
     fn flutter_pubspec_mirror_preserves_build_number() {
         let dir = temp_dir("pubspec");
         let path = dir.join("pubspec.yaml");
-        fs::write(&path, "name: salon\nversion: 1.8.0+18\nenvironment:\n  sdk: ^3.11.5\n").unwrap();
+        fs::write(
+            &path,
+            "name: salon\nversion: 1.8.0+18\nenvironment:\n  sdk: ^3.11.5\n",
+        )
+        .unwrap();
         sync_flutter_pubspec(&path, "1.8.0", "1.8.1").unwrap();
-        assert!(fs::read_to_string(&path).unwrap().contains("version: 1.8.1+18"));
+        assert!(fs::read_to_string(&path)
+            .unwrap()
+            .contains("version: 1.8.1+18"));
         let _ = fs::remove_dir_all(dir);
     }
 
@@ -1128,7 +1155,10 @@ mod tests {
         let message = super::rollback_log(log, &backup);
         assert!(message.contains("BUILD ❌ SALON exited with 1"));
         assert!(message.contains("simulated build stderr"));
-        assert_eq!(fs::read_to_string(&path).unwrap(), "{\"version\":\"1.8.0\"}\n");
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            "{\"version\":\"1.8.0\"}\n"
+        );
         let _ = fs::remove_dir_all(dir);
     }
 }
