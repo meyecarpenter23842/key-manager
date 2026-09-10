@@ -1,4 +1,5 @@
 mod admin_api;
+mod license_key_secret;
 mod r2_credentials;
 mod release_manager;
 mod release_manager_v2;

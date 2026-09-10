@@ -210,6 +210,13 @@ export async function createLicense(data: {
   return request("/api/admin/v1/licenses", { method: "POST", body: JSON.stringify(data) });
 }
 
+export async function revealLicenseKey(id: string): Promise<string> {
+  const result = await request<{ licenseKey: string }>(`/api/admin/v1/licenses/${id}/reveal-key`, {
+    method: "POST",
+  });
+  return result.licenseKey;
+}
+
 export async function renewLicense(id: string, data: { durationDays?: number; toLifetime?: boolean }): Promise<License> {
   const result = await request<{ license: License }>(`/api/admin/v1/licenses/${id}/renew`, {
     method: "POST",

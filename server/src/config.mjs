@@ -28,6 +28,7 @@ export function loadServerConfig(env = process.env) {
       .split(",")
       .map((value) => value.trim())
       .filter(Boolean),
+    licenseKeyEncryptionKey: env.LICENSE_KEY_ENCRYPTION_KEY || null,
     publicRateLimitMax: parsePositiveInteger(
       env.LICENSE_API_RATE_LIMIT_MAX,
       120,

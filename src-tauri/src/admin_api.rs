@@ -16,6 +16,7 @@ const API_HOST: &str = "127.0.0.1";
 const API_PORT: u16 = 3101;
 const API_ORIGINS: &str = "http://localhost:1420,http://tauri.localhost";
 const ENV_FILE_NAME: &str = "admin-api.env";
+const LICENSE_KEY_ENCRYPTION_ENV: &str = "LICENSE_KEY_ENCRYPTION_KEY";
 #[cfg(windows)]
 const BUNDLE_IDENTIFIER: &str = "com.keymanager.desktop";
 #[cfg(windows)]
@@ -66,6 +67,16 @@ pub(crate) fn stop_managed(state: &AdminApiState) {
     }
 }
 
+fn env_map_has_value(env: &HashMap<String, String>, key: &str) -> bool {
+    env.get(key).is_some_and(|value| !value.trim().is_empty())
+}
+
+fn process_env_has_value(key: &str) -> bool {
+    std::env::var(key)
+        .ok()
+        .is_some_and(|value| !value.trim().is_empty())
+}
+
 fn ensure_running_inner(
     app: &AppHandle,
     state: &AdminApiState,
@@ -95,6 +106,15 @@ fn ensure_running_inner(
         "ADMIN_API_ALLOWED_ORIGINS".to_string(),
         API_ORIGINS.to_string(),
     );
+
+    if !env_map_has_value(&runtime_env, LICENSE_KEY_ENCRYPTION_ENV)
+        && !process_env_has_value(LICENSE_KEY_ENCRYPTION_ENV)
+    {
+        runtime_env.insert(
+            LICENSE_KEY_ENCRYPTION_ENV.to_string(),
+            crate::license_key_secret::resolve_or_create(app)?,
+        );
+    }
 
     if !runtime_env.contains_key("DATABASE_URL") && std::env::var_os("DATABASE_URL").is_none() {
         let attempted = attempted_env_paths
@@ -371,14 +391,23 @@ fn api_health_ok() -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_env_file, push_unique_path, unquote_env_value};
-    use std::{fs, path::PathBuf, time::SystemTime};
+    use super::{env_map_has_value, parse_env_file, push_unique_path, unquote_env_value};
+    use std::{collections::HashMap, fs, path::PathBuf, time::SystemTime};
 
     #[test]
     fn env_values_support_simple_quotes() {
         assert_eq!(unquote_env_value("\"abc\""), "abc");
         assert_eq!(unquote_env_value("'abc'"), "abc");
         assert_eq!(unquote_env_value("abc"), "abc");
+    }
+
+    #[test]
+    fn blank_runtime_secret_is_treated_as_unconfigured() {
+        let mut env = HashMap::new();
+        env.insert("LICENSE_KEY_ENCRYPTION_KEY".to_string(), "  ".to_string());
+        assert!(!env_map_has_value(&env, "LICENSE_KEY_ENCRYPTION_KEY"));
+        env.insert("LICENSE_KEY_ENCRYPTION_KEY".to_string(), "abcd".to_string());
+        assert!(env_map_has_value(&env, "LICENSE_KEY_ENCRYPTION_KEY"));
     }
 
     #[test]
