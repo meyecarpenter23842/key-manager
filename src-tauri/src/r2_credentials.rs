@@ -100,7 +100,11 @@ pub(crate) fn save_r2_credential_profile(
     let mut vault = load_vault(&app)?;
     let name = validate_non_secret_field("name", &input.name, 80)?;
     let account_id = validate_non_secret_field("accountId", &input.account_id, 160)?;
-    let requested_id = input.id.as_deref().map(str::trim).filter(|value| !value.is_empty());
+    let requested_id = input
+        .id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
 
     let profile = if let Some(id) = requested_id {
         let existing = vault
@@ -302,7 +306,14 @@ fn to_summary(profile: &StoredR2CredentialProfile) -> R2CredentialProfileSummary
 }
 
 fn mask_access_key(value: &str) -> String {
-    let last: String = value.chars().rev().take(4).collect::<Vec<_>>().into_iter().rev().collect();
+    let last: String = value
+        .chars()
+        .rev()
+        .take(4)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
     if last.is_empty() {
         "****".to_string()
     } else {
@@ -551,9 +562,7 @@ mod dpapi {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        hex_decode, hex_encode, mask_access_key, to_summary, StoredR2CredentialProfile,
-    };
+    use super::{hex_decode, hex_encode, mask_access_key, to_summary, StoredR2CredentialProfile};
 
     #[test]
     fn encrypted_payload_hex_round_trips() {
