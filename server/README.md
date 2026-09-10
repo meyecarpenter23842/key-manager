@@ -10,17 +10,19 @@ The server hosts both the authenticated Admin API and the Public License API. It
 - A disabled admin cannot authenticate even when an unexpired session row still exists.
 - Every `/api/admin/v1/*` route except login authenticates the session on the server.
 - RBAC is enforced in the API, not by hiding desktop buttons.
-- OWNER can manage admin accounts. ADMIN can manage applications/licenses/customers/devices but not admin accounts. STAFF can read applications, read/write customers, create licenses and renew licenses; revoke/archive/device-limit changes remain restricted.
+- OWNER can manage admin accounts. ADMIN can manage applications/licenses/customers/devices but not admin accounts. STAFF can read applications, read/write customers, create licenses and renew licenses; reveal/revoke/archive/device-limit changes remain restricted.
 - Important auth, application, customer, license and device changes are written to `audit_logs`.
-- Raw license keys are generated with 128 bits of cryptographic randomness and returned only by the create-license response. PostgreSQL stores only a SHA-256 digest plus a masked preview.
-- License list/detail/customer-detail responses never include `license_key_hash`. Public License API responses and structured request logs never include the raw key or hash.
+- Raw license keys are generated with 128 bits of cryptographic randomness. PostgreSQL keeps the existing SHA-256 digest for validation, a masked preview for normal UI, and for newly created licenses an AES-256-GCM ciphertext envelope used only for authorized recovery.
+- Full-key recovery is available only to OWNER/ADMIN through `POST /api/admin/v1/licenses/:id/reveal-key`. Every successful recovery writes `LICENSE_KEY_REVEALED` to `audit_logs`; the raw key is never written to audit metadata or structured request logs.
+- Licenses created before migration `0008_encrypted_license_keys.sql` have no recoverable ciphertext. Their existing hashes cannot be reversed, so the Admin API returns `LICENSE_KEY_UNAVAILABLE` instead of inventing or replacing the old key.
+- License list/detail/customer-detail responses never include `license_key_hash` or `license_key_ciphertext`. Public License API responses and structured request logs never include the raw key, hash, or ciphertext.
 - Expired subscriptions are rejected using server time; Desktop Apps do not decide validity from the local clock.
 - Device activation serializes on the owning license row before counting active devices, so concurrent requests cannot exceed `max_devices`.
 - Client deactivation uses `INACTIVE`; administrative device revocation uses `REVOKED`. An inactive device may activate again if a slot is available, while a revoked device cannot self-reactivate.
 
 ## Local setup
 
-Run the ordered database migrations first. Phase 6 adds `0006_device_inactive_status.sql` and `0007_device_inactive_constraint.sql`, in that order.
+Run the ordered database migrations first. Device lifecycle uses `0006_device_inactive_status.sql` then `0007_device_inactive_constraint.sql`; encrypted raw-key retention is added by `0008_encrypted_license_keys.sql`.
 
 ```powershell
 $env:DATABASE_URL="postgresql://postgres:postgres@localhost:5432/key_manager_dev"
@@ -29,7 +31,12 @@ $env:ADMIN_API_HOST="127.0.0.1"
 $env:ADMIN_API_PORT="3001"
 $env:LICENSE_API_RATE_LIMIT_MAX="120"
 $env:LICENSE_API_RATE_LIMIT_WINDOW_SECONDS="60"
+# Required when running server:start directly. Use a stable 32-byte key encoded
+# as 64 hex characters or base64. Do not rotate it without re-encrypting stored keys.
+$env:LICENSE_KEY_ENCRYPTION_KEY="replace-with-a-stable-32-byte-key"
 ```
+
+The installed Windows Key Manager does not require manually setting `LICENSE_KEY_ENCRYPTION_KEY`: the Tauri host provisions a random 32-byte key once and protects it with Windows DPAPI before starting the bundled Admin API sidecar. A non-empty `LICENSE_KEY_ENCRYPTION_KEY` supplied through the sidecar environment still takes precedence. Hosted/shared API deployments must provide the same stable key to every API instance. The DPAPI-protected desktop secret is tied to the Windows security context; losing that secret/profile does not break license validation because hashes remain intact, but previously retained full keys can no longer be recovered.
 
 Bootstrap the first OWNER without putting the password in source code:
 
@@ -53,7 +60,7 @@ Check it from another terminal:
 Invoke-RestMethod http://127.0.0.1:3001/health
 ```
 
-For production, terminate TLS at a trusted reverse proxy/load balancer or equivalent HTTPS endpoint. Do not expose the plain HTTP listener directly to the internet. Database credentials and future private signing keys stay server-side.
+For production, terminate TLS at a trusted reverse proxy/load balancer or equivalent HTTPS endpoint. Do not expose the plain HTTP listener directly to the internet. Database credentials, license-key encryption keys and signing private keys stay server-side.
 
 ## Public License API v1
 
@@ -169,7 +176,8 @@ Customer search covers name, phone, email and company. Customer detail includes 
 
 - `GET /api/admin/v1/licenses?q=&applicationId=&customerId=&licenseType=&status=&expiringWithinDays=&limit=&offset=` — OWNER/ADMIN/STAFF
 - `POST /api/admin/v1/licenses` — OWNER/ADMIN/STAFF
-- `GET /api/admin/v1/licenses/:id` — OWNER/ADMIN/STAFF
+- `GET /api/admin/v1/licenses/:id` — OWNER/ADMIN/STAFF; includes `keyRevealAvailable` but never raw key/hash/ciphertext
+- `POST /api/admin/v1/licenses/:id/reveal-key` — OWNER/ADMIN only; returns the decrypted raw key after AES-GCM authentication and SHA-256 integrity verification, then audits the access
 - `POST /api/admin/v1/licenses/:id/renew` — OWNER/ADMIN/STAFF
 - `POST /api/admin/v1/licenses/:id/revoke` — OWNER/ADMIN
 - `POST /api/admin/v1/licenses/:id/reactivate` — OWNER/ADMIN
@@ -191,7 +199,7 @@ Create payload:
 
 For `SUBSCRIPTION`, omitted `durationDays` and `maxDevices` use the application's defaults. For `LIFETIME`, `expiresAt` is null and `durationDays` must be omitted; creation/conversion is rejected when the application has `allowLifetime=false`.
 
-The create response is the only response that contains the raw key:
+The create response returns the raw key immediately:
 
 ```json
 {
@@ -200,7 +208,9 @@ The create response is the only response that contains the raw key:
 }
 ```
 
-Exact raw-key search is supported without storing plaintext: the server hashes the search candidate and compares it with `license_key_hash`. General search also covers masked preview, application name/code and customer name/phone/email/company.
+For a license created after encrypted retention is enabled, OWNER/ADMIN can later call `POST /api/admin/v1/licenses/:id/reveal-key` and receive `{ "licenseKey": "..." }`. The server decrypts the AES-256-GCM envelope and verifies that the decrypted key still hashes to the stored `license_key_hash` before returning it. A legacy row with `license_key_ciphertext IS NULL` returns HTTP 409 `LICENSE_KEY_UNAVAILABLE`. If encryption is not configured, creating a new license fails closed with HTTP 503 `LICENSE_KEY_ENCRYPTION_UNAVAILABLE` rather than creating a key that cannot be recovered later.
+
+Exact raw-key search continues to use `license_key_hash`; search never decrypts retained key material. General search also covers masked preview, application name/code and customer name/phone/email/company.
 
 A subscription that is still valid extends from its current expiry. An expired subscription extends from server `now()` and becomes active immediately unless it is revoked. Renewing a revoked license preserves `REVOKED`. Reactivating a revoked but already expired subscription yields `EXPIRED`, so it still requires renewal. Archived licenses cannot be renewed, revoked or have their device limit changed.
 
