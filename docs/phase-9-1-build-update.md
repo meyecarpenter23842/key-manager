@@ -44,7 +44,9 @@ This keeps API/database access behind the Admin API process. Database credential
 
 ## Server-only runtime configuration
 
-The sidecar obtains `DATABASE_URL` and other server-only settings from the first applicable source below. Duplicate paths are ignored:
+If `DATABASE_URL` is unavailable on first launch, the login screen switches to a one-time **Cấu hình Admin API** form. The OWNER enters the PostgreSQL connection URL once; Rust validates it, stores it in Tauri's application config directory as `admin-api.env`, and immediately starts the bundled Admin API. The value is not compiled into React/Vite and Key Manager still accesses PostgreSQL only through the Admin API process.
+
+The sidecar can also obtain `DATABASE_URL` and other server-only settings from the first applicable source below. Duplicate paths are ignored:
 
 1. `KEY_MANAGER_ADMIN_API_ENV_FILE`, when explicitly set;
 2. Tauri's application config directory (`admin-api.env`);
@@ -56,14 +58,12 @@ The sidecar obtains `DATABASE_URL` and other server-only settings from the first
 8. the project-root `.env` file on the build/development machine;
 9. environment variables inherited by Key Manager.
 
-If `DATABASE_URL` is still unavailable, the login runtime status reports the exact candidate paths that were checked. This makes installed-app configuration independent of a single Tauri path resolver and supports both per-user and machine-wide Windows setups.
+If `DATABASE_URL` is still unavailable, the runtime status reports the exact candidate paths that were checked. The environment file uses simple `KEY=VALUE` lines. `VITE_*` entries are ignored by the sidecar loader.
 
-The environment file uses simple `KEY=VALUE` lines. `VITE_*` entries are ignored by the sidecar loader.
-
-For the current local Windows setup, a minimal file is:
+A valid first-run value looks like:
 
 ```text
-DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/key_manager_dev
+postgresql://postgres:postgres@127.0.0.1:5432/key_manager_dev
 ```
 
 Do not put server secrets into `VITE_*` variables.
