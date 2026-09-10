@@ -90,8 +90,11 @@ fn write_new_atomic(path: &Path, contents: &[u8]) -> Result<bool, String> {
     }
     drop(file);
 
-    match fs::rename(&temporary, path) {
-        Ok(()) => Ok(true),
+    match fs::hard_link(&temporary, path) {
+        Ok(()) => {
+            let _ = fs::remove_file(&temporary);
+            Ok(true)
+        }
         Err(_) if path.is_file() => {
             let _ = fs::remove_file(&temporary);
             Ok(false)
