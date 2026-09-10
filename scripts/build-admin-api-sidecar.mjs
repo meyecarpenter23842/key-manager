@@ -56,24 +56,21 @@ if (existsSync(output) && statSync(output).mtimeMs >= inputMtime) {
 }
 
 process.stdout.write(`[admin-api-sidecar] building ${targetTriple}\n`);
-const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
-const result = spawnSync(
-  pnpm,
-  [
-    "dlx",
-    "@yao-pkg/pkg@6.22.0",
-    "server/src/index.mjs",
-    "--target",
-    `node22-win-${pkgArch}`,
-    "--output",
-    output,
-  ],
-  {
-    cwd: root,
-    stdio: "inherit",
-    env: process.env,
-  },
-);
+const pkgArgs = [
+  "dlx",
+  "@yao-pkg/pkg@6.22.0",
+  "server/src/index.mjs",
+  "--target",
+  `node22-win-${pkgArch}`,
+  "--output",
+  output,
+];
+const command = process.env.ComSpec || "cmd.exe";
+const result = spawnSync(command, ["/D", "/S", "/C", "pnpm", ...pkgArgs], {
+  cwd: root,
+  stdio: "inherit",
+  env: process.env,
+});
 
 if (result.error) throw result.error;
 if (result.status !== 0) {
