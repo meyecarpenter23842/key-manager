@@ -44,12 +44,19 @@ This keeps API/database access behind the Admin API process. Database credential
 
 ## Server-only runtime configuration
 
-The sidecar obtains `DATABASE_URL` and other server-only settings from the first applicable source below:
+The sidecar obtains `DATABASE_URL` and other server-only settings from the first applicable source below. Duplicate paths are ignored:
 
 1. `KEY_MANAGER_ADMIN_API_ENV_FILE`, when explicitly set;
-2. `%APPDATA%\\com.keymanager.desktop\\admin-api.env`;
-3. the project-root `.env` file on the build/development machine;
-4. environment variables inherited by Key Manager.
+2. Tauri's application config directory (`admin-api.env`);
+3. `%APPDATA%\\com.keymanager.desktop\\admin-api.env`;
+4. `%APPDATA%\\Key Manager\\admin-api.env`;
+5. `%LOCALAPPDATA%\\com.keymanager.desktop\\admin-api.env`;
+6. `%LOCALAPPDATA%\\Key Manager\\admin-api.env`;
+7. `%PROGRAMDATA%\\Key Manager\\admin-api.env`;
+8. the project-root `.env` file on the build/development machine;
+9. environment variables inherited by Key Manager.
+
+If `DATABASE_URL` is still unavailable, the login runtime status reports the exact candidate paths that were checked. This makes installed-app configuration independent of a single Tauri path resolver and supports both per-user and machine-wide Windows setups.
 
 The environment file uses simple `KEY=VALUE` lines. `VITE_*` entries are ignored by the sidecar loader.
 
