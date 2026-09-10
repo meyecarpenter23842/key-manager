@@ -7,7 +7,7 @@ export interface AdminApiRuntimeStatus {
 }
 
 export function configureAdminApi(databaseUrl: string): Promise<void> {
-  return invoke("configure_admin_api", { databaseUrl });
+  return invoke<void>("configure_admin_api", { databaseUrl });
 }
 
 export function ensureAdminApiRuntime(): Promise<AdminApiRuntimeStatus> {
