@@ -16,6 +16,10 @@ const API_HOST: &str = "127.0.0.1";
 const API_PORT: u16 = 3101;
 const API_ORIGINS: &str = "http://localhost:1420,http://tauri.localhost";
 const ENV_FILE_NAME: &str = "admin-api.env";
+#[cfg(windows)]
+const BUNDLE_IDENTIFIER: &str = "com.keymanager.desktop";
+#[cfg(windows)]
+const PRODUCT_NAME: &str = "Key Manager";
 
 #[derive(Default)]
 pub struct AdminApiState {
@@ -84,7 +88,7 @@ fn ensure_running_inner(
         return Err(message);
     }
 
-    let mut runtime_env = load_runtime_env(app)?;
+    let (mut runtime_env, attempted_env_paths) = load_runtime_env(app)?;
     runtime_env.insert("ADMIN_API_HOST".to_string(), API_HOST.to_string());
     runtime_env.insert("ADMIN_API_PORT".to_string(), API_PORT.to_string());
     runtime_env.insert(
@@ -93,11 +97,13 @@ fn ensure_running_inner(
     );
 
     if !runtime_env.contains_key("DATABASE_URL") && std::env::var_os("DATABASE_URL").is_none() {
-        let expected = app_config_env_path(app)
+        let attempted = attempted_env_paths
+            .iter()
             .map(|path| path.display().to_string())
-            .unwrap_or_else(|_| ENV_FILE_NAME.to_string());
+            .collect::<Vec<_>>()
+            .join("; ");
         let message = format!(
-            "ADMIN_API_CONFIG_MISSING: DATABASE_URL is not available. Put server-only settings in {expected} or KEY_MANAGER_ADMIN_API_ENV_FILE."
+            "ADMIN_API_CONFIG_MISSING: DATABASE_URL is not available. Tried: {attempted}. You can also set KEY_MANAGER_ADMIN_API_ENV_FILE."
         );
         set_error(state, message.clone());
         return Err(message);
@@ -163,13 +169,6 @@ fn sidecar_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(resource_dir.join(name))
 }
 
-fn app_config_env_path(app: &AppHandle) -> Result<PathBuf, String> {
-    app.path()
-        .app_config_dir()
-        .map(|dir| dir.join(ENV_FILE_NAME))
-        .map_err(|error| format!("ADMIN_API_CONFIG_DIR_FAILED: {error}"))
-}
-
 fn admin_api_log_path(app: &AppHandle) -> Result<PathBuf, String> {
     app.path()
         .app_log_dir()
@@ -177,27 +176,62 @@ fn admin_api_log_path(app: &AppHandle) -> Result<PathBuf, String> {
         .map_err(|error| format!("ADMIN_API_LOG_DIR_FAILED: {error}"))
 }
 
-fn load_runtime_env(app: &AppHandle) -> Result<HashMap<String, String>, String> {
-    let mut env = HashMap::new();
+fn push_unique_path(paths: &mut Vec<PathBuf>, path: PathBuf) {
+    if !paths.iter().any(|existing| existing == &path) {
+        paths.push(path);
+    }
+}
+
+fn runtime_env_candidates(app: &AppHandle) -> Vec<PathBuf> {
     let mut candidates = Vec::new();
 
     if let Some(explicit) = std::env::var_os("KEY_MANAGER_ADMIN_API_ENV_FILE") {
-        candidates.push(PathBuf::from(explicit));
+        push_unique_path(&mut candidates, PathBuf::from(explicit));
     }
-    candidates.push(app_config_env_path(app)?);
+
+    if let Ok(dir) = app.path().app_config_dir() {
+        push_unique_path(&mut candidates, dir.join(ENV_FILE_NAME));
+    }
+
+    #[cfg(windows)]
+    {
+        for variable in ["APPDATA", "LOCALAPPDATA"] {
+            if let Some(base) = std::env::var_os(variable) {
+                let base = PathBuf::from(base);
+                push_unique_path(
+                    &mut candidates,
+                    base.join(BUNDLE_IDENTIFIER).join(ENV_FILE_NAME),
+                );
+                push_unique_path(&mut candidates, base.join(PRODUCT_NAME).join(ENV_FILE_NAME));
+            }
+        }
+        if let Some(base) = std::env::var_os("PROGRAMDATA") {
+            push_unique_path(
+                &mut candidates,
+                PathBuf::from(base).join(PRODUCT_NAME).join(ENV_FILE_NAME),
+            );
+        }
+    }
 
     let source_env = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .map(|path| path.join(".env"));
     if let Some(path) = source_env {
-        candidates.push(path);
+        push_unique_path(&mut candidates, path);
     }
 
-    for path in candidates {
+    candidates
+}
+
+fn load_runtime_env(app: &AppHandle) -> Result<(HashMap<String, String>, Vec<PathBuf>), String> {
+    let mut env = HashMap::new();
+    let candidates = runtime_env_candidates(app);
+
+    for path in &candidates {
         if !path.is_file() {
             continue;
         }
-        for (key, value) in parse_env_file(&path)? {
+        for (key, value) in parse_env_file(path)? {
             if key.starts_with("VITE_") {
                 continue;
             }
@@ -207,7 +241,7 @@ fn load_runtime_env(app: &AppHandle) -> Result<HashMap<String, String>, String> 
             break;
         }
     }
-    Ok(env)
+    Ok((env, candidates))
 }
 
 fn parse_env_file(path: &Path) -> Result<HashMap<String, String>, String> {
@@ -337,8 +371,8 @@ fn api_health_ok() -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_env_file, unquote_env_value};
-    use std::{fs, time::SystemTime};
+    use super::{parse_env_file, push_unique_path, unquote_env_value};
+    use std::{fs, path::PathBuf, time::SystemTime};
 
     #[test]
     fn env_values_support_simple_quotes() {
@@ -358,5 +392,14 @@ mod tests {
         fs::write(&path, "DATABASE_URL=postgres://example\nBROKEN").unwrap();
         assert!(parse_env_file(&path).is_err());
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn runtime_env_candidates_are_deduplicated() {
+        let mut paths = Vec::new();
+        let path = PathBuf::from("admin-api.env");
+        push_unique_path(&mut paths, path.clone());
+        push_unique_path(&mut paths, path);
+        assert_eq!(paths.len(), 1);
     }
 }
