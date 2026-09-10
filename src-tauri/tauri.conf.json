@@ -29,6 +29,10 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all"
+    "targets": "all",
+    "resources": [
+      "resources/r2-upload.mjs",
+      "resources/self-update.ps1"
+    ]
   }
 }
