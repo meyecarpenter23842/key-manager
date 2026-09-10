@@ -23,4 +23,15 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    files: ["src-tauri/resources/**/*.mjs"],
+    languageOptions: {
+      globals: {
+        Buffer: "readonly",
+        console: "readonly",
+        fetch: "readonly",
+        process: "readonly",
+      },
+    },
+  },
 );
