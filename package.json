@@ -12,6 +12,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
+    "desktop:prepare-sidecar": "node scripts/build-admin-api-sidecar.mjs",
     "desktop:dev": "tauri dev",
     "desktop:build": "tauri build",
     "server:start": "node server/src/index.mjs",
@@ -28,8 +29,8 @@
     "db:migrate": "node scripts/database.mjs migrate",
     "db:test": "node scripts/database.mjs test",
     "rust:fmt": "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check",
-    "rust:check": "cargo check --manifest-path src-tauri/Cargo.toml",
-    "rust:test": "cargo test --manifest-path src-tauri/Cargo.toml",
+    "rust:check": "pnpm desktop:prepare-sidecar && cargo check --manifest-path src-tauri/Cargo.toml",
+    "rust:test": "pnpm desktop:prepare-sidecar && cargo test --manifest-path src-tauri/Cargo.toml",
     "ci": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
   },
   "dependencies": {

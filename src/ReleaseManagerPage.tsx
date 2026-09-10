@@ -17,7 +17,7 @@ import {
   type ReleaseManagerConfig,
   type SelfUpdateStatus,
 } from "./releaseManager";
-import { formatFileSize, joinPatterns, splitPatterns } from "./releaseUi";
+import { formatFileSize, joinPatterns, nextPatchVersion, splitPatterns } from "./releaseUi";
 
 function blankProfile(application: Application): ExternalReleaseProfile {
   return {
@@ -44,15 +44,23 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
   const [config, setConfig] = useState<ReleaseManagerConfig | null>(null);
   const [applications, setApplications] = useState<Application[]>([]);
   const [update, setUpdate] = useState<SelfUpdateStatus | null>(null);
+  const [newVersion, setNewVersion] = useState("");
+  const [releaseNotes, setReleaseNotes] = useState("");
   const [editing, setEditing] = useState<ExternalReleaseProfile | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [log, setLog] = useState("");
 
   useEffect(() => {
-    void Promise.all([getReleaseManagerConfig(), listApplications({ limit: 100, offset: 0 })])
-      .then(([loadedConfig, loadedApplications]) => {
+    void Promise.all([
+      getReleaseManagerConfig(),
+      listApplications({ limit: 100, offset: 0 }),
+      checkKeyManagerUpdate().catch(() => null),
+    ])
+      .then(([loadedConfig, loadedApplications, loadedUpdate]) => {
         setConfig(loadedConfig);
         setApplications(loadedApplications.applications);
+        setUpdate(loadedUpdate);
+        setNewVersion((current) => current || nextPatchVersion(loadedUpdate?.currentVersion));
       })
       .catch(onError);
   }, [onError]);
@@ -68,7 +76,7 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
       setBusy("save");
       const saved = await saveReleaseManagerConfig(next);
       setConfig(saved);
-      notify("Đã lưu cấu hình Build & Update");
+      notify("Đã lưu Advanced settings");
     } catch (error) {
       onError(error instanceof Error ? error : new Error(String(error)));
     } finally {
@@ -76,13 +84,20 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
     }
   }
 
-  async function runKeyManagerPackage() {
+  async function runKeyManagerPackage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const version = newVersion.trim();
+    const notes = releaseNotes.trim();
+    if (!version || !notes) return;
     try {
       setBusy("key-manager-package");
-      const result = await packageKeyManager();
+      const result = await packageKeyManager(version, notes);
       setLog(resultSummary(result));
       notify(`Đã đóng gói Key Manager ${result.version}`, result.destination);
-      setUpdate(await checkKeyManagerUpdate());
+      const nextUpdate = await checkKeyManagerUpdate();
+      setUpdate(nextUpdate);
+      setNewVersion(nextPatchVersion(result.version));
+      setReleaseNotes("");
     } catch (error) {
       onError(error instanceof Error ? error : new Error(String(error)));
     } finally {
@@ -168,44 +183,75 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
         </div>
       </div>
 
-      <section className="panel release-panel">
+      <section className="panel release-panel release-local-panel">
         <div className="release-panel-heading">
           <div>
             <h2>Key Manager · LOCAL</h2>
-            <p>Build NSIS → copy installer vào thư mục local → tạo latest.json → cập nhật từ chính thư mục đó.</p>
+            <p>Nhập version mới và release notes. Key Manager tự đồng bộ source, build NSIS và publish release hoàn chỉnh.</p>
           </div>
           <span className="release-mode local">LOCAL</span>
         </div>
 
-        <div className="form-grid two">
-          <Field label="Source folder"><input value={config.keyManagerSourceDir} onChange={(event) => setConfig({ ...config, keyManagerSourceDir: event.target.value })} /></Field>
-          <Field label="Update folder"><input value={config.keyManagerUpdateDir} onChange={(event) => setConfig({ ...config, keyManagerUpdateDir: event.target.value })} /></Field>
-          <Field label="Build command"><input value={config.keyManagerBuildCommand} onChange={(event) => setConfig({ ...config, keyManagerBuildCommand: event.target.value })} /></Field>
-          <Field label="Build output"><input value={config.keyManagerOutputDir} onChange={(event) => setConfig({ ...config, keyManagerOutputDir: event.target.value })} /></Field>
-        </div>
+        <form className="release-local-form" onSubmit={(event) => void runKeyManagerPackage(event)}>
+          <div className="release-current-version">
+            <span>Version hiện tại</span>
+            <strong>{update?.currentVersion ?? "0.1.0"}</strong>
+          </div>
+          <Field label="Version mới" hint="SemVer dạng major.minor.patch, ví dụ 0.1.1">
+            <input
+              value={newVersion}
+              onChange={(event) => setNewVersion(event.target.value)}
+              placeholder="0.1.1"
+              autoComplete="off"
+              required
+            />
+          </Field>
+          <Field label="Release notes" hint="Nội dung này được ghi vào manifest local của release">
+            <textarea
+              value={releaseNotes}
+              onChange={(event) => setReleaseNotes(event.target.value)}
+              rows={5}
+              placeholder="Mô tả ngắn những thay đổi trong bản mới…"
+              required
+            />
+          </Field>
+          <div className="release-actions primary-flow">
+            <button className="button primary" type="submit" disabled={Boolean(busy) || !newVersion.trim() || !releaseNotes.trim()}>
+              <PackageIcon size={17} /> {busy === "key-manager-package" ? "Đang đóng gói…" : "Đóng gói bản mới"}
+            </button>
+          </div>
+        </form>
 
-        <div className="release-actions">
-          <button className="button ghost" type="button" disabled={Boolean(busy)} onClick={() => void saveConfig()}>
-            <CheckIcon size={17} /> Lưu cấu hình
-          </button>
-          <button className="button primary" type="button" disabled={Boolean(busy)} onClick={() => void runKeyManagerPackage()}>
-            <PackageIcon size={17} /> {busy === "key-manager-package" ? "Đang đóng gói…" : "Đóng gói bản hiện tại"}
-          </button>
+        <details className="release-advanced">
+          <summary>Advanced settings</summary>
+          <p className="release-advanced-note">Chỉ cần mở khi đổi máy build hoặc thay cấu trúc source/output.</p>
+          <div className="form-grid two">
+            <Field label="Source folder"><input value={config.keyManagerSourceDir} onChange={(event) => setConfig({ ...config, keyManagerSourceDir: event.target.value })} /></Field>
+            <Field label="Update folder"><input value={config.keyManagerUpdateDir} onChange={(event) => setConfig({ ...config, keyManagerUpdateDir: event.target.value })} /></Field>
+            <Field label="Build command"><input value={config.keyManagerBuildCommand} onChange={(event) => setConfig({ ...config, keyManagerBuildCommand: event.target.value })} /></Field>
+            <Field label="Build output"><input value={config.keyManagerOutputDir} onChange={(event) => setConfig({ ...config, keyManagerOutputDir: event.target.value })} /></Field>
+          </div>
+          <div className="release-actions">
+            <button className="button ghost" type="button" disabled={Boolean(busy)} onClick={() => void saveConfig()}>
+              <CheckIcon size={17} /> {busy === "save" ? "Đang lưu…" : "Lưu Advanced settings"}
+            </button>
+          </div>
+        </details>
+
+        <div className="release-status-grid">
+          <div><span>Version local mới nhất</span><strong>{update?.latestVersion ?? "Chưa có"}</strong></div>
+          <div><span>Installer</span><strong>{update?.installerName ?? "—"}</strong><small>{formatFileSize(update?.installerSize)}</small></div>
+          <div><span>Kho update</span><strong>{config.keyManagerUpdateDir}</strong></div>
+        </div>
+        <div className="release-update-actions">
           <button className="button ghost" type="button" disabled={Boolean(busy)} onClick={() => void checkUpdate()}>
-            <RefreshIcon size={17} /> Kiểm tra cập nhật
+            <RefreshIcon size={17} /> {busy === "check-update" ? "Đang kiểm tra…" : "Kiểm tra cập nhật"}
           </button>
           {update?.available ? (
             <button className="button primary" type="button" disabled={Boolean(busy)} onClick={() => void installUpdate()}>
               Cập nhật lên {update.latestVersion}
             </button>
           ) : null}
-        </div>
-
-        <div className="release-status-grid">
-          <div><span>Version đang chạy</span><strong>{update?.currentVersion ?? "—"}</strong></div>
-          <div><span>Version local mới nhất</span><strong>{update?.latestVersion ?? "Chưa kiểm tra"}</strong></div>
-          <div><span>Installer</span><strong>{update?.installerName ?? "—"}</strong><small>{formatFileSize(update?.installerSize)}</small></div>
-          <div><span>Kho update</span><strong>{config.keyManagerUpdateDir}</strong></div>
         </div>
       </section>
 

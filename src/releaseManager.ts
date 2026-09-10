@@ -53,8 +53,8 @@ export function saveReleaseManagerConfig(config: ReleaseManagerConfig): Promise<
   return invoke("save_release_manager_config", { config });
 }
 
-export function packageKeyManager(): Promise<PackageResult> {
-  return invoke("package_key_manager");
+export function packageKeyManager(newVersion: string, releaseNotes: string): Promise<PackageResult> {
+  return invoke("package_key_manager_release_safe", { newVersion, releaseNotes });
 }
 
 export function checkKeyManagerUpdate(): Promise<SelfUpdateStatus> {

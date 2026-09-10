@@ -9,6 +9,12 @@ export function joinPatterns(patterns: string[]): string {
   return patterns.join(", ");
 }
 
+export function nextPatchVersion(version: string | null | undefined): string {
+  const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(String(version || "").trim());
+  if (!match) return "";
+  return `${match[1]}.${match[2]}.${Number(match[3]) + 1}`;
+}
+
 export function formatFileSize(bytes: number | null | undefined): string {
   if (bytes === null || bytes === undefined) return "—";
   if (bytes < 1024) return `${bytes} B`;
