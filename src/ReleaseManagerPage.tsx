@@ -7,6 +7,7 @@ import { PackageIcon, UploadIcon } from "./releaseIcons";
 import type { Application } from "./types";
 import {
   checkKeyManagerUpdate,
+  deleteKeyManagerDraftRelease,
   getReleaseManagerConfig,
   installKeyManagerUpdate,
   packageExternalApplication,
@@ -40,12 +41,17 @@ function resultSummary(result: PackageResult): string {
   return `${result.appCode} ${result.version}\n${result.destination}\n${files}\n\n${result.log}`.trim();
 }
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler; notify: Notify }) {
   const [config, setConfig] = useState<ReleaseManagerConfig | null>(null);
   const [applications, setApplications] = useState<Application[]>([]);
   const [update, setUpdate] = useState<SelfUpdateStatus | null>(null);
   const [newVersion, setNewVersion] = useState("");
   const [releaseNotes, setReleaseNotes] = useState("");
+  const [conflictVersion, setConflictVersion] = useState<string | null>(null);
   const [editing, setEditing] = useState<ExternalReleaseProfile | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [log, setLog] = useState("");
@@ -91,6 +97,7 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
     if (!version || !notes) return;
     try {
       setBusy("key-manager-package");
+      setConflictVersion(null);
       const result = await packageKeyManager(version, notes);
       setLog(resultSummary(result));
       notify(`Đã đóng gói Key Manager ${result.version}`, result.destination);
@@ -98,6 +105,26 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
       setUpdate(nextUpdate);
       setNewVersion(nextPatchVersion(result.version));
       setReleaseNotes("");
+    } catch (error) {
+      const message = errorMessage(error);
+      if (message.includes("RELEASE_ALREADY_EXISTS:")) {
+        setConflictVersion(version);
+      }
+      onError(error instanceof Error ? error : new Error(message));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function deleteConflictingRelease() {
+    if (!conflictVersion) return;
+    if (!window.confirm(`Xóa release nháp ${conflictVersion}? Chỉ release không phải latest/source/running version mới được phép xóa.`)) return;
+    try {
+      setBusy("delete-draft-release");
+      await deleteKeyManagerDraftRelease(conflictVersion);
+      notify(`Đã xóa release nháp ${conflictVersion}`, "Có thể bấm Đóng gói bản mới lại với cùng version.");
+      setConflictVersion(null);
+      setUpdate(await checkKeyManagerUpdate());
     } catch (error) {
       onError(error instanceof Error ? error : new Error(String(error)));
     } finally {
@@ -200,7 +227,10 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
           <Field label="Version mới" hint="SemVer dạng major.minor.patch, ví dụ 0.1.1">
             <input
               value={newVersion}
-              onChange={(event) => setNewVersion(event.target.value)}
+              onChange={(event) => {
+                setNewVersion(event.target.value);
+                if (conflictVersion && event.target.value.trim() !== conflictVersion) setConflictVersion(null);
+              }}
               placeholder="0.1.1"
               autoComplete="off"
               required
@@ -221,6 +251,18 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
             </button>
           </div>
         </form>
+
+        {conflictVersion ? (
+          <div className="release-conflict" role="status">
+            <div>
+              <strong>Release {conflictVersion} đã tồn tại nhưng chưa được publish làm bản mới nhất.</strong>
+              <small>Key Manager không tự ghi đè release cũ. Nếu đây là release nháp/lỗi từ lần test trước, xóa nó rồi đóng gói lại.</small>
+            </div>
+            <button className="button danger-soft" type="button" disabled={Boolean(busy)} onClick={() => void deleteConflictingRelease()}>
+              {busy === "delete-draft-release" ? "Đang xóa…" : `Xóa release nháp ${conflictVersion}`}
+            </button>
+          </div>
+        ) : null}
 
         <details className="release-advanced">
           <summary>Advanced settings</summary>
@@ -247,11 +289,18 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
           <button className="button ghost" type="button" disabled={Boolean(busy)} onClick={() => void checkUpdate()}>
             <RefreshIcon size={17} /> {busy === "check-update" ? "Đang kiểm tra…" : "Kiểm tra cập nhật"}
           </button>
-          {update?.available ? (
-            <button className="button primary" type="button" disabled={Boolean(busy)} onClick={() => void installUpdate()}>
-              Cập nhật lên {update.latestVersion}
-            </button>
-          ) : null}
+          <button
+            className={update?.available ? "button primary" : "button secondary"}
+            type="button"
+            disabled={Boolean(busy) || !update?.available}
+            onClick={() => void installUpdate()}
+          >
+            {update?.available
+              ? `Cập nhật lên ${update.latestVersion}`
+              : update
+                ? "Không có bản cập nhật mới"
+                : "Chưa có dữ liệu cập nhật"}
+          </button>
         </div>
       </section>
 
