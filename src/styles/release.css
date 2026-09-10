@@ -1,4 +1,4 @@
-.release-page { gap: 18px; }
+.release-page { gap: 18px; min-height: 100%; }
 .release-panel { padding: 22px; }
 .release-panel-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 18px; }
 .release-panel-heading h2 { margin: 0 0 5px; font-size: 17px; }
@@ -14,6 +14,11 @@
 .release-local-form .primary-flow { grid-column: 1 / -1; margin-top: 0; }
 .release-local-form .primary-flow .button { min-width: 190px; }
 .release-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 18px; }
+.release-conflict { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-top: 14px; padding: 13px 14px; border: 1px solid #ffd6dc; border-radius: 12px; background: var(--danger-soft); }
+.release-conflict > div { min-width: 0; display: grid; gap: 4px; }
+.release-conflict strong { color: #a93343; font-size: 12px; }
+.release-conflict small { color: #8d5d65; font-size: 11px; line-height: 1.45; }
+.release-conflict .button { flex: none; }
 .release-advanced { margin-top: 16px; padding: 0 16px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
 .release-advanced summary { cursor: pointer; padding: 14px 0; color: #4d586b; font-size: 12px; font-weight: 750; user-select: none; }
 .release-advanced[open] { padding-bottom: 16px; }
@@ -24,7 +29,7 @@
 .release-status-grid span, .release-status-grid small { display: block; color: var(--muted); font-size: 11px; }
 .release-status-grid strong { display: block; margin-top: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
 .release-status-grid small { margin-top: 4px; }
-.release-update-actions { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+.release-update-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 12px; }
 .r2-secret-note { margin-bottom: 14px; padding: 12px 14px; border: 1px solid #f0dfbd; border-radius: 10px; background: #fffaf0; color: #78571d; font-size: 12px; line-height: 1.55; }
 .r2-secret-note code { font-weight: 700; }
 .release-app-list { display: grid; gap: 8px; }
@@ -38,10 +43,17 @@
 .release-log pre { max-height: 360px; margin: 0; overflow: auto; padding: 14px; border-radius: 11px; background: #11131a; color: #d8deea; font: 12px/1.55 "Cascadia Code", Consolas, monospace; white-space: pre-wrap; word-break: break-word; }
 .release-loading { padding: 28px; color: var(--muted); }
 
+/* The shell owns viewport scrolling; grid children need a zero min-height or
+   long pages can grow behind body{overflow:hidden} instead of scrolling. */
+.workspace { min-height: 0; height: 100vh; overflow: hidden; }
+.content-area { min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; }
+
 @media (max-width: 1180px) {
   .release-local-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .release-local-form .field:last-of-type { grid-column: 1 / -1; }
   .release-status-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .release-app-row { grid-template-columns: minmax(220px, 1fr); }
   .release-row-actions { justify-content: flex-start; }
+  .release-conflict { align-items: stretch; flex-direction: column; }
+  .release-conflict .button { align-self: flex-start; }
 }
