@@ -14,6 +14,7 @@ const pool = createDatabasePool(process.env.DATABASE_URL);
 const repository = new AdminRepository(pool);
 const ownerPassword = "Owner-Phase4-Password-42";
 const staffPassword = "Staff-Phase4-Password-42";
+const licenseKeyEncryptionKey = "11".repeat(32);
 let server;
 
 async function api(baseUrl, path, options = {}) {
@@ -37,10 +38,12 @@ async function login(baseUrl, email, password) {
   return result.body.token;
 }
 
-function assertNoHash(payload) {
+function assertNoKeyMaterial(payload) {
   const serialized = JSON.stringify(payload);
   assert.equal(serialized.includes("license_key_hash"), false);
   assert.equal(serialized.includes("licenseKeyHash"), false);
+  assert.equal(serialized.includes("license_key_ciphertext"), false);
+  assert.equal(serialized.includes("licenseKeyCiphertext"), false);
 }
 
 try {
@@ -58,7 +61,11 @@ try {
     passwordHash: await hashPassword(ownerPassword),
   });
 
-  server = createAdminApiServer({ repository, sessionTtlHours: 1 });
+  server = createAdminApiServer({
+    repository,
+    sessionTtlHours: 1,
+    licenseKeyEncryptionKey,
+  });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   const baseUrl = `http://127.0.0.1:${address.port}`;
@@ -147,13 +154,13 @@ try {
   assert.equal(createSubscription.body.license.licenseType, "SUBSCRIPTION");
   assert.equal(createSubscription.body.license.maxDevices, 2);
   assert.equal(createSubscription.body.license.status, "ACTIVE");
-  assertNoHash(createSubscription.body);
+  assertNoKeyMaterial(createSubscription.body);
   const subscriptionId = createSubscription.body.license.id;
   const rawSubscriptionKey = createSubscription.body.licenseKey;
   const initialExpiry = new Date(createSubscription.body.license.expiresAt);
 
   const storedKey = await pool.query(
-    `SELECT license_key_hash, license_key_preview
+    `SELECT license_key_hash, license_key_preview, license_key_ciphertext
      FROM licenses
      WHERE id = $1`,
     [subscriptionId],
@@ -161,6 +168,8 @@ try {
   assert.equal(storedKey.rows[0].license_key_hash.equals(hashLicenseKey(rawSubscriptionKey)), true);
   assert.notEqual(storedKey.rows[0].license_key_preview, rawSubscriptionKey);
   assert.equal(storedKey.rows[0].license_key_preview.includes(rawSubscriptionKey), false);
+  assert.match(storedKey.rows[0].license_key_ciphertext, /^v1\./);
+  assert.equal(storedKey.rows[0].license_key_ciphertext.includes(rawSubscriptionKey), false);
 
   const rawKeySearch = await api(
     baseUrl,
@@ -170,7 +179,7 @@ try {
   assert.equal(rawKeySearch.response.status, 200);
   assert.equal(rawKeySearch.body.pagination.total, 1);
   assert.equal(rawKeySearch.body.licenses[0].id, subscriptionId);
-  assertNoHash(rawKeySearch.body);
+  assertNoKeyMaterial(rawKeySearch.body);
 
   for (const query of ["License Customer", "900 111", "phase four", "PHASE4_APP"]) {
     const search = await api(
@@ -197,8 +206,35 @@ try {
   assert.equal(detail.body.license.application.id, applicationId);
   assert.equal(detail.body.license.customer.id, customerId);
   assert.equal(detail.body.license.events[0].eventType, "LICENSE_CREATED");
+  assert.equal(detail.body.license.keyRevealAvailable, true);
   assert.equal("licenseKey" in detail.body.license, false);
-  assertNoHash(detail.body);
+  assertNoKeyMaterial(detail.body);
+  assert.equal(JSON.stringify(detail.body).includes(rawSubscriptionKey), false);
+
+  const staffCannotReveal = await api(
+    baseUrl,
+    `/api/admin/v1/licenses/${subscriptionId}/reveal-key`,
+    { method: "POST", headers: staffHeaders },
+  );
+  assert.equal(staffCannotReveal.response.status, 403);
+  assert.equal(staffCannotReveal.body.error.code, "FORBIDDEN");
+
+  const reveal = await api(baseUrl, `/api/admin/v1/licenses/${subscriptionId}/reveal-key`, {
+    method: "POST",
+    headers: ownerHeaders,
+  });
+  assert.equal(reveal.response.status, 200);
+  assert.equal(reveal.body.licenseKey, rawSubscriptionKey);
+  assertNoKeyMaterial(reveal.body);
+
+  const revealAudit = await pool.query(
+    `SELECT action, metadata
+     FROM audit_logs
+     WHERE target_type = 'LICENSE' AND target_id = $1 AND action = 'LICENSE_KEY_REVEALED'`,
+    [subscriptionId],
+  );
+  assert.equal(revealAudit.rowCount, 1);
+  assert.equal(JSON.stringify(revealAudit.rows[0]).includes(rawSubscriptionKey), false);
 
   const createLifetime = await api(baseUrl, "/api/admin/v1/licenses", {
     method: "POST",
@@ -209,6 +245,21 @@ try {
   assert.equal(createLifetime.body.license.expiresAt, null);
   assert.equal(createLifetime.body.license.status, "ACTIVE");
   const lifetimeId = createLifetime.body.license.id;
+
+  await pool.query("UPDATE licenses SET license_key_ciphertext = NULL WHERE id = $1", [lifetimeId]);
+  const legacyDetail = await api(baseUrl, `/api/admin/v1/licenses/${lifetimeId}`, {
+    headers: ownerHeaders,
+  });
+  assert.equal(legacyDetail.response.status, 200);
+  assert.equal(legacyDetail.body.license.keyRevealAvailable, false);
+  assertNoKeyMaterial(legacyDetail.body);
+
+  const legacyReveal = await api(baseUrl, `/api/admin/v1/licenses/${lifetimeId}/reveal-key`, {
+    method: "POST",
+    headers: ownerHeaders,
+  });
+  assert.equal(legacyReveal.response.status, 409);
+  assert.equal(legacyReveal.body.error.code, "LICENSE_KEY_UNAVAILABLE");
 
   const lifetimeFilter = await api(baseUrl, "/api/admin/v1/licenses?licenseType=LIFETIME", {
     headers: ownerHeaders,
@@ -378,8 +429,9 @@ try {
     headers: ownerHeaders,
   });
   assert.equal(archivedDetail.response.status, 200);
+  assert.equal(archivedDetail.body.license.keyRevealAvailable, true);
   assert.equal("licenseKey" in archivedDetail.body.license, false);
-  assertNoHash(archivedDetail.body);
+  assertNoKeyMaterial(archivedDetail.body);
   const eventTypes = archivedDetail.body.license.events.map((event) => event.eventType);
   for (const eventType of [
     "LICENSE_CREATED",
@@ -401,6 +453,7 @@ try {
   const auditActions = new Map(auditResult.rows.map((row) => [row.action, row.count]));
   for (const action of [
     "LICENSE_CREATED",
+    "LICENSE_KEY_REVEALED",
     "LICENSE_RENEWED",
     "LICENSE_REVOKED",
     "LICENSE_REACTIVATED",
