@@ -29,7 +29,9 @@ An already-published `<version>` directory is rejected. If build or publish fail
 
 ## Bundled Admin API sidecar
 
-The Windows desktop build packages `server/src/index.mjs` into a self-contained `key-manager-api.exe` using pinned `@yao-pkg/pkg@6.22.0` at build time. Tauri includes it through `bundle.externalBin`.
+The Windows desktop build first bundles the local ESM Admin API graph into one CommonJS entry with Vite/Rollup, then packages that single entry into a self-contained `key-manager-api.exe` using pinned `@yao-pkg/pkg@6.22.0`. This avoids pkg's ESM filename transformation problem for local `.mjs` imports. Tauri includes the executable through `bundle.externalBin`.
+
+Every generated or cached sidecar is executed with `--sidecar-self-test` during `desktop:prepare-sidecar`. The build fails immediately if the packaged executable cannot load its bundled server modules, preventing an installer from passing CI with a sidecar that only fails at runtime.
 
 The installed application does **not** require Node.js or pnpm. On launch the Rust host:
 
@@ -82,4 +84,4 @@ pnpm tauri build --bundles nsis
 
 ## Required verification
 
-Before merge, run frontend lint/typecheck/tests/build, Rust format/check/tests, Admin API integration tests, and the Windows Tauri build check. After merge, perform the real `0.1.0 -> 0.1.1` installer/update flow from issue #17 and verify that opening Key Manager from its shortcut starts the API without a separate terminal.
+Before merge, run frontend lint/typecheck/tests/build, Rust format/check/tests, Admin API integration tests, and the Windows Tauri build check. `desktop:prepare-sidecar` must also pass the packaged executable self-test. After merge, perform the real `0.1.0 -> 0.1.1` installer/update flow from issue #17 and verify that opening Key Manager from its shortcut starts the API without a separate terminal.
