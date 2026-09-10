@@ -57,6 +57,10 @@ export function packageKeyManager(newVersion: string, releaseNotes: string): Pro
   return invoke("package_key_manager_release_safe", { newVersion, releaseNotes });
 }
 
+export function deleteKeyManagerDraftRelease(version: string): Promise<void> {
+  return invoke("delete_key_manager_draft_release", { version });
+}
+
 export function checkKeyManagerUpdate(): Promise<SelfUpdateStatus> {
   return invoke("check_key_manager_update");
 }
