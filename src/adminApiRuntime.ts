@@ -6,6 +6,10 @@ export interface AdminApiRuntimeStatus {
   detail: string | null;
 }
 
+export function configureAdminApi(databaseUrl: string): Promise<void> {
+  return invoke("configure_admin_api", { databaseUrl });
+}
+
 export function ensureAdminApiRuntime(): Promise<AdminApiRuntimeStatus> {
   return invoke("ensure_admin_api");
 }
