@@ -676,7 +676,40 @@ export class AdminRepository {
     };
   }
 
-  async createLicense({ data, keyHash, keyPreview, actorAdminId, requestId, ipAddress }) {
+  async getLicenseKeyMaterial(id) {
+    const result = await this.pool.query(
+      `SELECT
+         license_key_hash AS "licenseKeyHash",
+         license_key_ciphertext AS "licenseKeyCiphertext"
+       FROM licenses
+       WHERE id = $1
+       LIMIT 1`,
+      [id],
+    );
+    return result.rows[0] ?? null;
+  }
+
+  async recordLicenseKeyReveal({ id, actorAdminId, requestId, ipAddress }) {
+    await insertAudit(this.pool, {
+      actorAdminId,
+      action: "LICENSE_KEY_REVEALED",
+      targetType: "LICENSE",
+      targetId: id,
+      ipAddress,
+      requestId,
+      metadata: {},
+    });
+  }
+
+  async createLicense({
+    data,
+    keyHash,
+    keyPreview,
+    keyCiphertext,
+    actorAdminId,
+    requestId,
+    ipAddress,
+  }) {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
@@ -714,14 +747,15 @@ export class AdminRepository {
       const insertResult = await client.query(
         `INSERT INTO licenses (
            application_id, customer_id, license_key_hash, license_key_preview,
-           license_type, expires_at, max_devices, status, note, created_by_admin_id
+           license_key_ciphertext, license_type, expires_at, max_devices, status, note,
+           created_by_admin_id
          ) VALUES (
-           $1, $2, $3, $4, $5,
-           CASE WHEN $5::license_type = 'SUBSCRIPTION'
-             THEN now() + make_interval(days => $6::int)
+           $1, $2, $3, $4, $5, $6,
+           CASE WHEN $6::license_type = 'SUBSCRIPTION'
+             THEN now() + make_interval(days => $7::int)
              ELSE NULL
            END,
-           $7, 'ACTIVE', $8, $9
+           $8, 'ACTIVE', $9, $10
          )
          RETURNING id`,
         [
@@ -729,6 +763,7 @@ export class AdminRepository {
           data.customerId,
           keyHash,
           keyPreview,
+          keyCiphertext,
           data.licenseType,
           durationDays,
           maxDevices,
