@@ -191,15 +191,17 @@ pub(crate) fn package_external_release(
         Ok(path) => path,
         Err(error) => return Err(with_rollback(log, "UPLOAD_ARTIFACT", error, &backup)),
     };
+    let uploader_for_node = node_compatible_path(&uploader);
+    let node_cwd = node_compatible_path(&source);
     let mut command = Command::new("node");
-    command.arg(uploader);
+    command.arg(&uploader_for_node);
     command.arg("--bucket").arg(&profile.r2_bucket);
     command.arg("--prefix").arg(&profile.r2_prefix);
     for pattern in &profile.manifest_patterns {
         command.arg("--manifest").arg(pattern);
     }
     for (artifact, _) in &ordered {
-        command.arg("--file").arg(artifact);
+        command.arg("--file").arg(node_compatible_path(artifact));
     }
     if let Some(credentials) = credential_profile {
         // Secrets remain scoped to the uploader child process only.
@@ -208,7 +210,7 @@ pub(crate) fn package_external_release(
         command.env(R2_SECRET_ENV, credentials.secret_access_key);
     }
 
-    let upload = match command.current_dir(&source).output() {
+    let upload = match command.current_dir(&node_cwd).output() {
         Ok(output) => output,
         Err(error) => {
             let stage = ordered
@@ -916,6 +918,22 @@ fn destination_for(profile: &ExternalReleaseProfile) -> String {
     }
 }
 
+fn node_compatible_path(path: &Path) -> PathBuf {
+    #[cfg(windows)]
+    {
+        if let Some(raw) = path.to_str() {
+            if let Some(rest) = raw.strip_prefix(r"\\?\UNC\") {
+                return PathBuf::from(format!(r"\\{rest}"));
+            }
+            if let Some(rest) = raw.strip_prefix(r"\\?\") {
+                return PathBuf::from(rest);
+            }
+        }
+    }
+
+    path.to_path_buf()
+}
+
 fn resource_file(app: &AppHandle, name: &str) -> Result<PathBuf, String> {
     if let Ok(resource_dir) = app.path().resource_dir() {
         let packaged = resource_dir.join("resources").join(name);
@@ -1025,8 +1043,9 @@ fn rollback_log(mut log: Vec<String>, backup: &SourceBackup) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        ensure_newer_version, order_uploads, prepare_json_manifest, replace_json_string_field,
-        stage_fail, sync_flutter_pubspec, upload_stage_lines, SourceBackup,
+        ensure_newer_version, node_compatible_path, order_uploads, prepare_json_manifest,
+        replace_json_string_field, stage_fail, sync_flutter_pubspec, upload_stage_lines,
+        SourceBackup,
     };
     use serde_json::Value;
     use std::{fs, path::PathBuf, time::SystemTime};
@@ -1042,6 +1061,21 @@ mod tests {
         ));
         fs::create_dir_all(&path).unwrap();
         path
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn node_paths_strip_windows_verbatim_prefixes() {
+        assert_eq!(
+            node_compatible_path(std::path::Path::new(
+                r"\\?\F:\1_A_Disk_D\Tool\Hair_Spa_Manager"
+            )),
+            PathBuf::from(r"F:\1_A_Disk_D\Tool\Hair_Spa_Manager")
+        );
+        assert_eq!(
+            node_compatible_path(std::path::Path::new(r"\\?\UNC\server\share\release")),
+            PathBuf::from(r"\\server\share\release")
+        );
     }
 
     #[test]

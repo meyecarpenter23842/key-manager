@@ -12,6 +12,11 @@ describe("external release UI regression coverage", () => {
     expect(flow.indexOf("setLog(message);")).toBeLessThan(flow.indexOf("onError("));
   });
 
+  it("shows the current external publish log inside the release modal", () => {
+    expect(source).toContain('className="release-modal-log"');
+    expect(source).toContain("<pre>{log}</pre>");
+  });
+
   it("collects source status before asking for the next external version", () => {
     expect(source).toContain("getExternalReleaseStatus(application.id)");
     expect(source).toContain("newVersion: nextPatchVersion(status.currentVersion)");

@@ -314,6 +314,7 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
     try {
       setBusy(`external-status:${application.id}`);
       const status = await getExternalReleaseStatus(application.id);
+      setLog("");
       setPublishing({
         application,
         currentVersion: status.currentVersion,
@@ -339,6 +340,7 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
     const application = publishing.application;
     try {
       setBusy(`external:${application.id}`);
+      setLog("");
       const result = await packageExternalApplication(application.id, version, notes);
       setLog(resultSummary(result));
       setApplications((current) => current.map((item) => item.id === application.id ? { ...item, currentVersion: result.version } : item));
@@ -555,6 +557,12 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
               <textarea value={publishing.releaseNotes} onChange={(event) => setPublishing((current) => current ? { ...current, releaseNotes: event.target.value } : current)} rows={5} placeholder="Mô tả ngắn những thay đổi trong bản mới…" required />
             </Field>
             <div className="r2-secret-note">Flow: bump version → build → validate → upload artifact → upload manifest cuối. Nếu fail, source version được rollback và log lỗi vẫn được giữ.</div>
+            {log ? (
+              <div className="release-modal-log" aria-live="polite">
+                <strong>Build / Publish log</strong>
+                <pre>{log}</pre>
+              </div>
+            ) : null}
             <div className="modal-actions">
               <button className="button ghost" type="button" onClick={() => setPublishing(null)}>Hủy</button>
               <button className="button primary" type="submit" disabled={Boolean(busy) || !publishing.newVersion.trim() || !publishing.releaseNotes.trim()}><UploadIcon size={17} /> {busy === `external:${publishing.application.id}` ? "Đang build & publish…" : "Đóng gói & Upload R2"}</button>
