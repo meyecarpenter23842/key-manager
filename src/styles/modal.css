@@ -73,3 +73,33 @@
 .timeline > div > div { display: grid; align-content: start; gap: 2px; }
 .timeline strong { font-size: 8.5px; color: #596273; }
 .timeline small { color: #9ca3ae; font-size: 8px; }
+
+
+/* Application image */
+.visually-hidden { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; margin: -1px !important; overflow: hidden !important; clip: rect(0,0,0,0) !important; white-space: nowrap !important; border: 0 !important; }
+.application-icon-picker { display: grid; grid-template-columns: 44px minmax(0,1fr) auto auto; gap: 10px; align-items: center; padding: 11px 12px; border: 1px solid #e6e8ed; border-radius: 10px; background: #fafbfc; }
+.application-icon-picker .app-avatar { width: 44px; height: 44px; border-radius: 11px; }
+.application-icon-picker > div { display: grid; gap: 3px; min-width: 0; }
+.application-icon-picker strong { font-size: 11px; }
+.application-icon-picker small { color: #9299a7; font-size: 9px; line-height: 1.4; }
+
+/* Customer cross-reference */
+.customer-detail { padding: 19px; display: grid; gap: 15px; }
+.customer-license-header { display: flex; justify-content: space-between; align-items: end; gap: 14px; }
+.customer-license-header p { margin: 4px 0 0; color: #929aa8; font-size: 9px; }
+.customer-license-list { display: grid; gap: 8px; }
+.customer-license-card { width: 100%; border: 1px solid #e8ebf0; border-radius: 11px; background: #fff; display: grid; grid-template-columns: minmax(180px,1.25fr) minmax(155px,1fr) minmax(160px,1fr) auto; gap: 12px; align-items: center; padding: 11px 12px; text-align: left; cursor: pointer; transition: border-color .14s, box-shadow .14s, transform .14s; }
+.customer-license-card:hover { border-color: #cfc8f5; box-shadow: 0 6px 18px rgba(54,45,111,.07); transform: translateY(-1px); }
+.customer-license-main { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.customer-license-main > div, .customer-license-key, .customer-license-devices, .customer-license-status { display: grid; gap: 3px; min-width: 0; }
+.customer-license-main strong, .customer-license-key strong, .customer-license-devices strong { color: #303949; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.customer-license-main small, .customer-license-key small, .customer-license-devices small, .customer-license-status small { color: #969daa; font-size: 8.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.customer-license-key > span, .customer-license-devices > span { display: inline-flex; align-items: center; gap: 4px; color: #8f96a4; font-size: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; }
+.customer-license-status { justify-items: end; min-width: 126px; }
+
+@media (max-width: 1180px) {
+  .application-icon-picker { grid-template-columns: 44px minmax(0,1fr) auto; }
+  .application-icon-picker .danger-text { grid-column: 3; }
+  .customer-license-card { grid-template-columns: minmax(180px,1fr) minmax(150px,1fr) auto; }
+  .customer-license-devices { display: none; }
+}

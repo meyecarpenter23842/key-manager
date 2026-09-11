@@ -22,7 +22,26 @@ describe("Phase 3 resource validation", () => {
       defaultDeviceLimit: 1,
       defaultDurationDays: 30,
       allowLifetime: true,
+      iconDataUrl: null,
     });
+  });
+
+  it("accepts normalized application image data URLs and rejects remote URLs", () => {
+    expect(
+      normalizeApplicationCreate({
+        name: "App",
+        appCode: "APP_ICON",
+        iconDataUrl: "data:image/png;base64,iVBORw0KGgo=",
+      }).iconDataUrl,
+    ).toBe("data:image/png;base64,iVBORw0KGgo=");
+
+    expect(() =>
+      normalizeApplicationCreate({
+        name: "App",
+        appCode: "APP_ICON",
+        iconDataUrl: "https://example.test/icon.png",
+      }),
+    ).toThrow(/iconDataUrl/);
   });
 
   it("rejects unknown application fields", () => {

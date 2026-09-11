@@ -69,6 +69,7 @@ const APPLICATION_SELECT = `
   default_device_limit AS "defaultDeviceLimit",
   default_duration_days AS "defaultDurationDays",
   allow_lifetime AS "allowLifetime",
+  icon_data_url AS "iconDataUrl",
   created_at AS "createdAt",
   updated_at AS "updatedAt"`;
 
@@ -102,6 +103,7 @@ const LICENSE_SELECT = `
   l.updated_at AS "updatedAt",
   a.name AS "applicationName",
   a.app_code AS "appCode",
+  a.icon_data_url AS "applicationIconDataUrl",
   c.name AS "customerName",
   c.phone AS "customerPhone",
   c.email AS "customerEmail",
@@ -349,8 +351,9 @@ export class AdminRepository {
       const result = await client.query(
         `INSERT INTO applications (
            name, app_code, description, current_version, minimum_version, status,
-           offline_grace_seconds, default_device_limit, default_duration_days, allow_lifetime
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+           offline_grace_seconds, default_device_limit, default_duration_days, allow_lifetime,
+           icon_data_url
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
          RETURNING ${APPLICATION_SELECT}`,
         [
           data.name,
@@ -363,6 +366,7 @@ export class AdminRepository {
           data.defaultDeviceLimit,
           data.defaultDurationDays,
           data.allowLifetime,
+          data.iconDataUrl,
         ],
       );
       const application = result.rows[0];
@@ -410,7 +414,8 @@ export class AdminRepository {
              offline_grace_seconds = $8,
              default_device_limit = $9,
              default_duration_days = $10,
-             allow_lifetime = $11
+             allow_lifetime = $11,
+             icon_data_url = $12
          WHERE id = $1
          RETURNING ${APPLICATION_SELECT}`,
         [
@@ -425,6 +430,7 @@ export class AdminRepository {
           next.defaultDeviceLimit,
           next.defaultDurationDays,
           next.allowLifetime,
+          next.iconDataUrl,
         ],
       );
       const application = result.rows[0];
@@ -661,6 +667,7 @@ export class AdminRepository {
         id: license.applicationId,
         name: license.applicationName,
         appCode: license.appCode,
+        iconDataUrl: license.applicationIconDataUrl,
       },
       customer: license.customerId
         ? {
@@ -1091,6 +1098,7 @@ export class AdminRepository {
            a.id AS "applicationId",
            a.name AS "applicationName",
            a.app_code AS "appCode",
+           a.icon_data_url AS "applicationIconDataUrl",
            count(d.id)::int AS "deviceCount",
            count(d.id) FILTER (WHERE d.status = 'ACTIVE')::int AS "activeDeviceCount"
          FROM licenses l
@@ -1170,6 +1178,7 @@ export class AdminRepository {
           id: license.applicationId,
           name: license.applicationName,
           appCode: license.appCode,
+          iconDataUrl: license.applicationIconDataUrl,
         },
         deviceCount: license.deviceCount,
         activeDeviceCount: license.activeDeviceCount,

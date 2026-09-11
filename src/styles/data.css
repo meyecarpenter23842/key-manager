@@ -36,8 +36,9 @@ tbody tr:hover { background: #fbfbfd; }
 .cell-title > div, .cell-stack { display: grid; gap: 3px; min-width: 0; }
 .cell-title strong, .cell-stack strong { color: #303949; font-size: 10.5px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cell-title small, .cell-stack small { color: #969daa; font-size: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
-.app-avatar, .customer-avatar, .device-avatar { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; flex: none; font-size: 9px; font-weight: 800; color: #6650dc; background: #eeeaff; text-transform: uppercase; }
+.app-avatar, .customer-avatar, .device-avatar { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; flex: none; font-size: 9px; font-weight: 800; color: #6650dc; background: #eeeaff; text-transform: uppercase; overflow: hidden; }
 .app-avatar.large-avatar { width: 34px; height: 34px; }
+.app-avatar img { width: 100%; height: 100%; object-fit: contain; background: #fff; }
 .customer-avatar { color: #247d5b; background: #eaf7f1; }
 .admin-avatar { color: #6951df; background: #eeeaff; }
 .device-avatar { color: #3d75bc; background: #edf4fd; }
