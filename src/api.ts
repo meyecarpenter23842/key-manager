@@ -3,6 +3,7 @@ import type {
   AdminListItem,
   Application,
   Customer,
+  CustomerDetail,
   Device,
   License,
   LicenseDetail,
@@ -178,6 +179,11 @@ export async function updateCustomer(id: string, data: Partial<Pick<Customer, "n
     method: "PATCH",
     body: JSON.stringify(data),
   });
+  return result.customer;
+}
+
+export async function getCustomer(id: string): Promise<CustomerDetail> {
+  const result = await request<{ customer: CustomerDetail }>(`/api/admin/v1/customers/${id}`);
   return result.customer;
 }
 
