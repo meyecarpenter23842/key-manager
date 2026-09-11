@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 
 import { listApplications } from "./api";
+import { ApplicationAvatar } from "./ApplicationAvatar";
 import { Field, Modal, type ErrorHandler, type Notify } from "./components";
 import { CheckIcon, RefreshIcon } from "./icons";
 import { PackageIcon, UploadIcon } from "./releaseIcons";
@@ -520,7 +521,7 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
             return (
               <div className="release-app-row" key={application.id}>
                 <div className="cell-title">
-                  <span className="app-avatar large-avatar">{application.appCode.slice(0, 2)}</span>
+                  <ApplicationAvatar appCode={application.appCode} iconDataUrl={application.iconDataUrl} large />
                   <div><strong>{application.name}</strong><small>{application.appCode} · {application.currentVersion || "chưa có version"}</small></div>
                 </div>
                 <div className="release-profile-summary">
