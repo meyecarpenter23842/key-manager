@@ -81,6 +81,17 @@ function customerEmail(value) {
   return lower;
 }
 
+function applicationIconDataUrl(value) {
+  if (value === undefined) return undefined;
+  if (value === null || value === "") return null;
+  if (typeof value !== "string") throw invalid("iconDataUrl must be a string");
+  if (Buffer.byteLength(value, "utf8") > 262144) throw invalid("iconDataUrl is too large");
+  if (!/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(value)) {
+    throw invalid("iconDataUrl must be a base64 PNG, JPEG or WebP data URL");
+  }
+  return value;
+}
+
 const APPLICATION_FIELDS = new Set([
   "name",
   "appCode",
@@ -92,6 +103,7 @@ const APPLICATION_FIELDS = new Set([
   "defaultDeviceLimit",
   "defaultDurationDays",
   "allowLifetime",
+  "iconDataUrl",
 ]);
 
 export function normalizeApplicationCreate(body) {
@@ -118,6 +130,7 @@ export function normalizeApplicationCreate(body) {
         : integer(body.defaultDurationDays, "defaultDurationDays", { min: 1, max: 36500 }),
     allowLifetime:
       body.allowLifetime === undefined ? true : boolean(body.allowLifetime, "allowLifetime"),
+    iconDataUrl: applicationIconDataUrl(body.iconDataUrl) ?? null,
   };
 }
 
@@ -157,6 +170,9 @@ export function normalizeApplicationPatch(body) {
   }
   if (Object.hasOwn(body, "allowLifetime")) {
     result.allowLifetime = boolean(body.allowLifetime, "allowLifetime");
+  }
+  if (Object.hasOwn(body, "iconDataUrl")) {
+    result.iconDataUrl = applicationIconDataUrl(body.iconDataUrl);
   }
   if (Object.keys(result).length === 0) throw invalid("At least one editable field is required");
   return result;
