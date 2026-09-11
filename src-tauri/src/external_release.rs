@@ -1048,7 +1048,7 @@ mod tests {
         SourceBackup,
     };
     use serde_json::Value;
-    use std::{fs, path::{Path, PathBuf}, time::SystemTime};
+    use std::{fs, path::PathBuf, time::SystemTime};
 
     fn temp_dir(label: &str) -> PathBuf {
         let stamp = SystemTime::now()
@@ -1067,11 +1067,11 @@ mod tests {
     #[test]
     fn node_paths_strip_windows_verbatim_prefixes() {
         assert_eq!(
-            node_compatible_path(Path::new(r"\\?\F:\1_A_Disk_D\Tool\Hair_Spa_Manager")),
+            node_compatible_path(std::path::Path::new(r"\\?\F:\1_A_Disk_D\Tool\Hair_Spa_Manager")),
             PathBuf::from(r"F:\1_A_Disk_D\Tool\Hair_Spa_Manager")
         );
         assert_eq!(
-            node_compatible_path(Path::new(r"\\?\UNC\server\share\release")),
+            node_compatible_path(std::path::Path::new(r"\\?\UNC\server\share\release")),
             PathBuf::from(r"\\server\share\release")
         );
     }
