@@ -1067,7 +1067,9 @@ mod tests {
     #[test]
     fn node_paths_strip_windows_verbatim_prefixes() {
         assert_eq!(
-            node_compatible_path(std::path::Path::new(r"\\?\F:\1_A_Disk_D\Tool\Hair_Spa_Manager")),
+            node_compatible_path(std::path::Path::new(
+                r"\\?\F:\1_A_Disk_D\Tool\Hair_Spa_Manager"
+            )),
             PathBuf::from(r"F:\1_A_Disk_D\Tool\Hair_Spa_Manager")
         );
         assert_eq!(
