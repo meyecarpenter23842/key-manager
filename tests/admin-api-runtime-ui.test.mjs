@@ -13,7 +13,7 @@ describe("Admin API runtime recovery UI", () => {
   });
 
   it("retries one login after recovering from a network-level API failure", () => {
-    const submit = source.match(/async function submit\(event:[\s\S]*?\n  }\n\n  return \(/)?.[0] ?? "";
+    const submit = source.match(/async function submit\(event:[\s\S]*?\n {2}}\n\n {2}return \(/)?.[0] ?? "";
     expect(submit).toContain('caught.code !== "NETWORK_ERROR"');
     expect(submit).toContain("const runtime = await ensureAdminApiRuntime()");
     expect(submit.match(/result = await login\(email, password\)/g)?.length).toBe(2);
