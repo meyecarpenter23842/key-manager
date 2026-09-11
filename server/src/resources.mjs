@@ -1,3 +1,5 @@
+import { Buffer } from "node:buffer";
+
 const APPLICATION_STATUSES = new Set(["ACTIVE", "DISABLED"]);
 const APP_CODE_PATTERN = /^[A-Z0-9][A-Z0-9_-]{1,31}$/;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
