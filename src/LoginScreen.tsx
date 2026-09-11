@@ -17,20 +17,35 @@ export function LoginScreen({ onLogin }: { onLogin: (admin: AdminIdentity) => vo
 
   useEffect(() => {
     let active = true;
-    void ensureAdminApiRuntime()
-      .then(async (runtime) => {
+    let checking = false;
+
+    async function refreshRuntime() {
+      if (checking) return;
+      checking = true;
+      try {
+        const runtime = await ensureAdminApiRuntime();
+        const online = runtime.online || (await health());
         if (!active) return;
         setApiManaged(runtime.managed);
         setApiDetail(runtime.detail);
-        setApiOnline(runtime.online || (await health()));
-      })
-      .catch(async (caught) => {
+        setApiOnline(online);
+      } catch (caught) {
+        const online = await health();
         if (!active) return;
+        setApiManaged(false);
         setApiDetail(caught instanceof Error ? caught.message : String(caught));
-        setApiOnline(await health());
-      });
+        setApiOnline(online);
+      } finally {
+        checking = false;
+      }
+    }
+
+    void refreshRuntime();
+    const timer = window.setInterval(() => void refreshRuntime(), 5_000);
+
     return () => {
       active = false;
+      window.clearInterval(timer);
     };
   }, []);
 
@@ -66,8 +81,25 @@ export function LoginScreen({ onLogin }: { onLogin: (admin: AdminIdentity) => vo
     setBusy(true);
     setError(null);
     const data = new FormData(event.currentTarget);
+    const email = String(data.get("email") || "");
+    const password = String(data.get("password") || "");
+
     try {
-      const result = await login(String(data.get("email") || ""), String(data.get("password") || ""));
+      let result;
+      try {
+        result = await login(email, password);
+      } catch (caught) {
+        if (!(caught instanceof ApiError) || caught.code !== "NETWORK_ERROR") throw caught;
+
+        const runtime = await ensureAdminApiRuntime();
+        const online = runtime.online || (await health());
+        setApiManaged(runtime.managed);
+        setApiDetail(runtime.detail);
+        setApiOnline(online);
+        if (!online) throw caught;
+
+        result = await login(email, password);
+      }
       onLogin(result.admin);
     } catch (caught) {
       setError(caught instanceof ApiError
