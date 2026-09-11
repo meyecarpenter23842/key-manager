@@ -667,6 +667,7 @@ export class AdminRepository {
         id: license.applicationId,
         name: license.applicationName,
         appCode: license.appCode,
+        iconDataUrl: license.applicationIconDataUrl,
       },
       customer: license.customerId
         ? {
