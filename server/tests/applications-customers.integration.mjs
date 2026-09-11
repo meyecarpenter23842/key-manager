@@ -96,11 +96,13 @@ try {
       defaultDeviceLimit: 2,
       defaultDurationDays: 45,
       allowLifetime: false,
+      iconDataUrl: "data:image/png;base64,iVBORw0KGgo=",
     }),
   });
   assert.equal(createApplication.response.status, 201);
   assert.equal(createApplication.body.application.appCode, "DESKTOP-PRO");
   assert.equal(createApplication.body.application.defaultDeviceLimit, 2);
+  assert.equal(createApplication.body.application.iconDataUrl, "data:image/png;base64,iVBORw0KGgo=");
   const applicationId = createApplication.body.application.id;
 
   const duplicateApplication = await api(baseUrl, "/api/admin/v1/applications", {
@@ -117,6 +119,17 @@ try {
     body: JSON.stringify({ name: "Bad", appCode: "?", extra: true }),
   });
   assert.equal(invalidApplication.response.status, 400);
+
+  const invalidIcon = await api(baseUrl, "/api/admin/v1/applications", {
+    method: "POST",
+    headers: ownerHeaders,
+    body: JSON.stringify({
+      name: "Bad Icon",
+      appCode: "BAD_ICON",
+      iconDataUrl: "https://example.test/icon.png",
+    }),
+  });
+  assert.equal(invalidIcon.response.status, 400);
 
   const staffCanReadApplications = await api(
     baseUrl,
@@ -215,6 +228,7 @@ try {
   assert.equal(customerDetail.body.customer.licenses.length, 1);
   const detailLicense = customerDetail.body.customer.licenses[0];
   assert.equal(detailLicense.application.appCode, "DESKTOP-PRO");
+  assert.equal(detailLicense.application.iconDataUrl, "data:image/png;base64,iVBORw0KGgo=");
   assert.equal(detailLicense.devices.length, 1);
   assert.equal(detailLicense.renewalHistory.length, 1);
   assert.equal(detailLicense.activeDeviceCount, 1);
