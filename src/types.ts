@@ -33,6 +33,7 @@ export interface Application {
   defaultDeviceLimit: number;
   defaultDurationDays: number;
   allowLifetime: boolean;
+  iconDataUrl: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -46,6 +47,40 @@ export interface Customer {
   note: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface CustomerLicenseDevice extends LicenseDevice {
+  licenseId: string;
+}
+
+export interface CustomerRenewalEvent extends LicenseEvent {
+  licenseId: string;
+}
+
+export interface CustomerLicenseDetail {
+  id: string;
+  licenseKeyPreview: string;
+  licenseType: LicenseType;
+  expiresAt: string | null;
+  maxDevices: number;
+  status: LicenseStatus;
+  note: string | null;
+  createdAt: string;
+  updatedAt: string;
+  application: {
+    id: string;
+    name: string;
+    appCode: string;
+    iconDataUrl: string | null;
+  };
+  deviceCount: number;
+  activeDeviceCount: number;
+  devices: CustomerLicenseDevice[];
+  renewalHistory: CustomerRenewalEvent[];
+}
+
+export interface CustomerDetail extends Customer {
+  licenses: CustomerLicenseDetail[];
 }
 
 export interface License {
@@ -62,6 +97,7 @@ export interface License {
   updatedAt: string;
   applicationName: string;
   appCode: string;
+  applicationIconDataUrl: string | null;
   customerName: string | null;
   customerPhone: string | null;
   customerEmail: string | null;
@@ -96,7 +132,7 @@ export interface LicenseDevice {
 
 export interface LicenseDetail extends License {
   keyRevealAvailable: boolean;
-  application: { id: string; name: string; appCode: string };
+  application: { id: string; name: string; appCode: string; iconDataUrl: string | null };
   customer: {
     id: string;
     name: string;
