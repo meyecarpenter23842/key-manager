@@ -74,12 +74,13 @@ pub(crate) fn get_external_release_status(
     let current_version =
         normalize_semver(&read_json_string(&version_file, &profile.version_field)?)?;
     validate_flutter_version_mirror(&source, &current_version)?;
+    let destination = destination_for(&profile);
 
     Ok(ExternalReleaseStatus {
         application_id,
         app_code: profile.app_code,
         current_version,
-        destination: destination_for(&profile),
+        destination,
     })
 }
 
