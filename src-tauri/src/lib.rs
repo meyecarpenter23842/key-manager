@@ -1,4 +1,5 @@
 mod admin_api;
+mod external_release;
 mod license_key_secret;
 mod r2_credentials;
 mod release_manager;
@@ -229,6 +230,8 @@ pub fn run() {
             delete_key_manager_draft_release,
             release_manager::check_key_manager_update,
             release_manager::install_key_manager_update,
+            external_release::get_external_release_status,
+            external_release::package_external_release,
             release_manager::package_external_application
         ])
         .build(tauri::generate_context!())

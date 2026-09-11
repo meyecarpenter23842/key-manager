@@ -10,6 +10,7 @@ import {
   checkKeyManagerUpdate,
   deleteKeyManagerDraftRelease,
   deleteR2CredentialProfile,
+  getExternalReleaseStatus,
   getReleaseManagerConfig,
   installKeyManagerUpdate,
   listR2CredentialProfiles,
@@ -32,6 +33,14 @@ interface R2CredentialEditor {
   accountId: string;
   accessKeyPreview: string;
   hasSecret: boolean;
+}
+
+interface ExternalPublishEditor {
+  application: Application;
+  currentVersion: string;
+  newVersion: string;
+  releaseNotes: string;
+  destination: string;
 }
 
 const emptyR2State: R2CredentialState = { profiles: [], bindings: [] };
@@ -83,6 +92,7 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
   const [newVersion, setNewVersion] = useState("");
   const [releaseNotes, setReleaseNotes] = useState("");
   const [conflictVersion, setConflictVersion] = useState<string | null>(null);
+  const [publishing, setPublishing] = useState<ExternalPublishEditor | null>(null);
   const [editing, setEditing] = useState<ExternalReleaseProfile | null>(null);
   const [editingR2, setEditingR2] = useState<R2CredentialEditor | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -168,6 +178,7 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
       setReleaseNotes("");
     } catch (error) {
       const message = errorMessage(error);
+      setLog(message);
       if (message.includes("RELEASE_ALREADY_EXISTS:")) {
         setConflictVersion(version);
       }
@@ -299,14 +310,44 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
     }
   }
 
-  async function packageExternal(application: Application) {
+  async function openExternalPublish(application: Application) {
+    try {
+      setBusy(`external-status:${application.id}`);
+      const status = await getExternalReleaseStatus(application.id);
+      setPublishing({
+        application,
+        currentVersion: status.currentVersion,
+        newVersion: nextPatchVersion(status.currentVersion),
+        releaseNotes: "",
+        destination: status.destination,
+      });
+    } catch (error) {
+      const message = errorMessage(error);
+      setLog(message);
+      onError(error instanceof Error ? error : new Error(message));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function runExternalPackage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!publishing) return;
+    const version = publishing.newVersion.trim();
+    const notes = publishing.releaseNotes.trim();
+    if (!version || !notes) return;
+    const application = publishing.application;
     try {
       setBusy(`external:${application.id}`);
-      const result = await packageExternalApplication(application.id);
+      const result = await packageExternalApplication(application.id, version, notes);
       setLog(resultSummary(result));
+      setApplications((current) => current.map((item) => item.id === application.id ? { ...item, currentVersion: result.version } : item));
+      setPublishing(null);
       notify(`Đã build & publish ${application.name} ${result.version}`, result.destination);
     } catch (error) {
-      onError(error instanceof Error ? error : new Error(String(error)));
+      const message = errorMessage(error);
+      setLog(message);
+      onError(error instanceof Error ? error : new Error(message));
     } finally {
       setBusy(null);
     }
@@ -424,7 +465,7 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
         <div className="release-panel-heading">
           <div>
             <h2>Ứng dụng khác · R2</h2>
-            <p>Mỗi app có source/build/output riêng. Artifact upload trước, manifest như latest.yml upload cuối.</p>
+            <p>Cấu hình source/build/output là cố định; version mới và release notes chỉ nhập khi phát hành. Artifact upload trước, manifest upload cuối.</p>
           </div>
           <span className="release-mode r2">R2</span>
         </div>
@@ -490,9 +531,9 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
                   ) : <span>Chưa cấu hình build/R2</span>}
                 </div>
                 <div className="release-row-actions">
-                  <button className="button ghost" type="button" onClick={() => openProfile(application)}>Cấu hình</button>
-                  <button className="button primary" type="button" disabled={!profile || Boolean(busy)} onClick={() => void packageExternal(application)}>
-                    <UploadIcon size={16} /> {busy === `external:${application.id}` ? "Đang publish…" : "Đóng gói & Upload R2"}
+                  <button className="button ghost" type="button" disabled={Boolean(busy)} onClick={() => openProfile(application)}>Cấu hình</button>
+                  <button className="button primary" type="button" disabled={!profile || Boolean(busy)} onClick={() => void openExternalPublish(application)}>
+                    <UploadIcon size={16} /> {busy === `external-status:${application.id}` ? "Đang đọc version…" : busy === `external:${application.id}` ? "Đang publish…" : "Phát hành R2"}
                   </button>
                 </div>
               </div>
@@ -501,7 +542,26 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
         </div>
       </section>
 
-      {log ? <section className="panel release-log"><div className="release-panel-heading"><div><h2>Build / Publish log</h2><p>Output gần nhất để đối chiếu khi build hoặc upload lỗi.</p></div></div><pre>{log}</pre></section> : null}
+      {log ? <section className="panel release-log"><div className="release-panel-heading"><div><h2>Build / Publish log</h2><p>Output gần nhất, kể cả khi build/validate/upload lỗi.</p></div></div><pre>{log}</pre></section> : null}
+
+      {publishing ? (
+        <Modal title={`Phát hành · ${publishing.application.name}`} subtitle={`${publishing.application.appCode} · ${publishing.destination}`} onClose={() => setPublishing(null)} wide>
+          <form className="modal-form" onSubmit={(event) => void runExternalPackage(event)}>
+            <div className="release-current-version"><span>Version hiện tại</span><strong>{publishing.currentVersion}</strong></div>
+            <Field label="Version mới" hint="SemVer major.minor.patch; phải lớn hơn version hiện tại">
+              <input value={publishing.newVersion} onChange={(event) => setPublishing((current) => current ? { ...current, newVersion: event.target.value } : current)} placeholder={nextPatchVersion(publishing.currentVersion) || "1.0.1"} autoComplete="off" required />
+            </Field>
+            <Field label="Release notes" hint="Được truyền vào build và manifest JSON tương thích">
+              <textarea value={publishing.releaseNotes} onChange={(event) => setPublishing((current) => current ? { ...current, releaseNotes: event.target.value } : current)} rows={5} placeholder="Mô tả ngắn những thay đổi trong bản mới…" required />
+            </Field>
+            <div className="r2-secret-note">Flow: bump version → build → validate → upload artifact → upload manifest cuối. Nếu fail, source version được rollback và log lỗi vẫn được giữ.</div>
+            <div className="modal-actions">
+              <button className="button ghost" type="button" onClick={() => setPublishing(null)}>Hủy</button>
+              <button className="button primary" type="submit" disabled={Boolean(busy) || !publishing.newVersion.trim() || !publishing.releaseNotes.trim()}><UploadIcon size={17} /> {busy === `external:${publishing.application.id}` ? "Đang build & publish…" : "Đóng gói & Upload R2"}</button>
+            </div>
+          </form>
+        </Modal>
+      ) : null}
 
       {editing ? (
         <Modal title={`Cấu hình release · ${editing.appCode}`} subtitle="Cấu hình này chỉ lưu local trên máy chạy Key Manager." onClose={() => setEditing(null)} wide>

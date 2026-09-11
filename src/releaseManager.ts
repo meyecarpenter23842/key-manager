@@ -36,6 +36,13 @@ export interface PackageResult {
   log: string;
 }
 
+export interface ExternalReleaseStatus {
+  applicationId: string;
+  appCode: string;
+  currentVersion: string;
+  destination: string;
+}
+
 export interface SelfUpdateStatus {
   currentVersion: string;
   latestVersion: string | null;
@@ -95,8 +102,16 @@ export function installKeyManagerUpdate(): Promise<void> {
   return invoke("install_key_manager_update");
 }
 
-export function packageExternalApplication(applicationId: string): Promise<PackageResult> {
-  return invoke("package_external_application", { applicationId });
+export function getExternalReleaseStatus(applicationId: string): Promise<ExternalReleaseStatus> {
+  return invoke("get_external_release_status", { applicationId });
+}
+
+export function packageExternalApplication(
+  applicationId: string,
+  newVersion: string,
+  releaseNotes: string,
+): Promise<PackageResult> {
+  return invoke("package_external_release", { applicationId, newVersion, releaseNotes });
 }
 
 export function listR2CredentialProfiles(): Promise<R2CredentialState> {
