@@ -56,6 +56,9 @@
 .release-row-actions { display: flex; align-items: center; gap: 8px; }
 .release-log { padding: 20px 22px; min-height: 180px; }
 .release-log pre { max-height: 360px; margin: 0; overflow: auto; padding: 14px; border-radius: 11px; background: #11131a; color: #d8deea; font: 12px/1.55 "Cascadia Code", Consolas, monospace; white-space: pre-wrap; word-break: break-word; }
+.release-modal-log { display: grid; gap: 8px; margin-bottom: 14px; }
+.release-modal-log strong { font-size: 12px; }
+.release-modal-log pre { max-height: 260px; margin: 0; overflow: auto; padding: 12px 14px; border-radius: 10px; background: #11131a; color: #d8deea; font: 12px/1.55 "Cascadia Code", Consolas, monospace; white-space: pre-wrap; word-break: break-word; }
 .release-loading { padding: 28px; color: var(--muted); }
 
 /* The shell owns viewport scrolling; grid children need a zero min-height or
