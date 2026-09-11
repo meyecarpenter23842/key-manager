@@ -190,5 +190,5 @@ jobs:
       - name: Rust tests
         run: pnpm rust:test
 
-      - name: Tauri desktop build check
-        run: pnpm tauri build --debug --no-bundle
+      - name: Tauri desktop bundle check
+        run: pnpm tauri build --debug --bundles nsis
