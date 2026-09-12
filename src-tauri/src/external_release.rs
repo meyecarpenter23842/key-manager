@@ -334,30 +334,145 @@ fn validate_and_prepare_artifacts(
         return Err("ARTIFACT_NOT_FOUND: release has no non-manifest artifact".to_string());
     }
 
-    // Build outputs often retain installers from older versions. If the current
-    // build produced versioned files, publish only the files belonging to the
-    // requested release plus its manifest/pointer.
-    let versioned = ordinary
-        .iter()
-        .filter(|path| {
-            path.file_name()
-                .and_then(|value| value.to_str())
-                .is_some_and(|name| name.contains(version))
-        })
-        .cloned()
-        .collect::<Vec<_>>();
-    if !versioned.is_empty() {
-        ordinary = versioned;
-    }
+    // Build outputs often retain installers from older versions. Keep the
+    // requested release plus unversioned support files, but never fall back to
+    // stale versioned artifacts when the requested build is missing.
+    ordinary = select_release_artifacts(ordinary, version)?;
 
     for manifest in &manifests {
-        prepare_json_manifest(manifest, version, release_notes)?;
+        prepare_manifest(manifest, version, release_notes)?;
     }
 
     let mut selected = ordinary;
     selected.extend(manifests);
     selected.sort();
     Ok(selected)
+}
+
+fn select_release_artifacts(
+    ordinary: Vec<PathBuf>,
+    version: &str,
+) -> Result<Vec<PathBuf>, String> {
+    let mut requested = Vec::new();
+    let mut unversioned = Vec::new();
+    let mut stale_versioned = Vec::new();
+
+    for path in ordinary {
+        let name = path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or_default();
+        if name.contains(version) {
+            requested.push(path);
+        } else if contains_numeric_semver(name) {
+            stale_versioned.push(path);
+        } else {
+            unversioned.push(path);
+        }
+    }
+
+    if requested.is_empty() && !stale_versioned.is_empty() {
+        let found = stale_versioned
+            .iter()
+            .filter_map(|path| path.file_name().and_then(|value| value.to_str()))
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(format!(
+            "ARTIFACT_VERSION_MISMATCH: no versioned artifact for release {version}; found only stale versioned artifacts: {found}"
+        ));
+    }
+
+    requested.extend(unversioned);
+    requested.sort();
+    Ok(requested)
+}
+
+fn contains_numeric_semver(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    for start in 0..bytes.len() {
+        if !bytes[start].is_ascii_digit() {
+            continue;
+        }
+        let mut cursor = start;
+        for part in 0..3 {
+            let digit_start = cursor;
+            while cursor < bytes.len() && bytes[cursor].is_ascii_digit() {
+                cursor += 1;
+            }
+            if cursor == digit_start {
+                break;
+            }
+            if part < 2 {
+                if cursor >= bytes.len() || bytes[cursor] != b'.' {
+                    break;
+                }
+                cursor += 1;
+            } else {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn prepare_manifest(path: &Path, version: &str, release_notes: &str) -> Result<(), String> {
+    match path
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(|value| value.to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("json") => prepare_json_manifest(path, version, release_notes),
+        Some("yml") | Some("yaml") => validate_yaml_manifest(path, version),
+        _ => Ok(()),
+    }
+}
+
+fn validate_yaml_manifest(path: &Path, version: &str) -> Result<(), String> {
+    let raw = fs::read_to_string(path)
+        .map_err(|error| format!("MANIFEST_READ_FAILED: {}: {error}", path.display()))?;
+    let mut found_version = false;
+
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if let Some(value) = trimmed.strip_prefix("version:") {
+            let found = value.trim().trim_matches(['"', '\'']);
+            if !found.is_empty() {
+                found_version = true;
+                if found != version {
+                    return Err(format!(
+                        "MANIFEST_VERSION_MISMATCH: {} version={} but release version is {}",
+                        path.display(),
+                        found,
+                        version
+                    ));
+                }
+            }
+        }
+
+        if let Some(value) = trimmed.strip_prefix("path:") {
+            let artifact = value.trim().trim_matches(['"', '\'']);
+            if !artifact.is_empty()
+                && contains_numeric_semver(artifact)
+                && !artifact.contains(version)
+            {
+                return Err(format!(
+                    "MANIFEST_ARTIFACT_MISMATCH: {} path={} does not reference release {}",
+                    path.display(),
+                    artifact,
+                    version
+                ));
+            }
+        }
+    }
+
+    if !found_version {
+        return Err(format!(
+            "MANIFEST_VERSION_NOT_FOUND: {} has no version field",
+            path.display()
+        ));
+    }
+    Ok(())
 }
 
 fn collect_release_artifacts(paths: &[PathBuf]) -> Result<Vec<ReleaseArtifact>, String> {
@@ -1044,8 +1159,8 @@ fn rollback_log(mut log: Vec<String>, backup: &SourceBackup) -> String {
 mod tests {
     use super::{
         ensure_newer_version, node_compatible_path, order_uploads, prepare_json_manifest,
-        replace_json_string_field, stage_fail, sync_flutter_pubspec, upload_stage_lines,
-        SourceBackup,
+        prepare_manifest, replace_json_string_field, select_release_artifacts, stage_fail,
+        sync_flutter_pubspec, upload_stage_lines, SourceBackup,
     };
     use serde_json::Value;
     use std::{fs, path::PathBuf, time::SystemTime};
@@ -1148,6 +1263,50 @@ mod tests {
         let error = prepare_json_manifest(&path, "1.8.1", "notes").unwrap_err();
         assert!(error.contains("MANIFEST_VERSION_MISMATCH"));
         let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn yaml_manifest_rejects_wrong_electron_builder_version() {
+        let dir = temp_dir("yaml-manifest-mismatch");
+        let path = dir.join("latest.yml");
+        fs::write(
+            &path,
+            "version: 1.0.8\nfiles:\n  - url: PageAuto-Setup-1.0.8.exe\npath: PageAuto-Setup-1.0.8.exe\n",
+        )
+        .unwrap();
+        let error = prepare_manifest(&path, "1.0.9", "notes").unwrap_err();
+        assert!(error.contains("MANIFEST_VERSION_MISMATCH"));
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn artifact_selection_rejects_stale_versioned_builds() {
+        let files = vec![
+            PathBuf::from("PageAuto-Setup-1.0.8.exe"),
+            PathBuf::from("PageAuto-Setup-1.0.8.exe.blockmap"),
+            PathBuf::from("PageAuto.exe"),
+            PathBuf::from("elevate.exe"),
+        ];
+        let error = select_release_artifacts(files, "1.0.9").unwrap_err();
+        assert!(error.contains("ARTIFACT_VERSION_MISMATCH"));
+        assert!(error.contains("PageAuto-Setup-1.0.8.exe"));
+    }
+
+    #[test]
+    fn artifact_selection_keeps_target_version_and_unversioned_support_files() {
+        let files = vec![
+            PathBuf::from("PageAuto-Setup-1.0.8.exe"),
+            PathBuf::from("PageAuto-Setup-1.0.9.exe"),
+            PathBuf::from("PageAuto-Setup-1.0.9.exe.blockmap"),
+            PathBuf::from("PageAuto.exe"),
+            PathBuf::from("elevate.exe"),
+        ];
+        let selected = select_release_artifacts(files, "1.0.9").unwrap();
+        assert!(selected.contains(&PathBuf::from("PageAuto-Setup-1.0.9.exe")));
+        assert!(selected.contains(&PathBuf::from("PageAuto-Setup-1.0.9.exe.blockmap")));
+        assert!(selected.contains(&PathBuf::from("PageAuto.exe")));
+        assert!(selected.contains(&PathBuf::from("elevate.exe")));
+        assert!(!selected.contains(&PathBuf::from("PageAuto-Setup-1.0.8.exe")));
     }
 
     #[test]
