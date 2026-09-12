@@ -349,10 +349,7 @@ fn validate_and_prepare_artifacts(
     Ok(selected)
 }
 
-fn select_release_artifacts(
-    ordinary: Vec<PathBuf>,
-    version: &str,
-) -> Result<Vec<PathBuf>, String> {
+fn select_release_artifacts(ordinary: Vec<PathBuf>, version: &str) -> Result<Vec<PathBuf>, String> {
     let mut requested = Vec::new();
     let mut unversioned = Vec::new();
     let mut stale_versioned = Vec::new();
