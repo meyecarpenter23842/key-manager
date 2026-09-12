@@ -3,10 +3,11 @@ import { useEffect, useState, type FormEvent } from "react";
 import { configureAdminApi, ensureAdminApiRuntime } from "./adminApiRuntime";
 import { ApiError, apiBaseUrl, health, login } from "./api";
 import { Field } from "./components";
-import { AlertIcon, KeyIcon, ShieldIcon } from "./icons";
+import { AlertIcon, KeyIcon, MoonIcon, ShieldIcon, SunIcon } from "./icons";
 import type { AdminIdentity } from "./types";
+import type { Theme } from "./App";
 
-export function LoginScreen({ onLogin }: { onLogin: (admin: AdminIdentity) => void }) {
+export function LoginScreen({ theme, onToggleTheme, onLogin }: { theme: Theme; onToggleTheme: () => void; onLogin: (admin: AdminIdentity) => void }) {
   const [busy, setBusy] = useState(false);
   const [configBusy, setConfigBusy] = useState(false);
   const [error, setError] = useState<{ message: string; detail?: string } | null>(null);
@@ -112,6 +113,15 @@ export function LoginScreen({ onLogin }: { onLogin: (admin: AdminIdentity) => vo
 
   return (
     <main className="login-shell">
+      <button
+        className="icon-button theme-toggle login-theme-toggle"
+        type="button"
+        onClick={onToggleTheme}
+        aria-label={theme === "dark" ? "Chuyển sang giao diện sáng" : "Chuyển sang giao diện tối"}
+        title={theme === "dark" ? "Giao diện sáng" : "Giao diện tối"}
+      >
+        {theme === "dark" ? <SunIcon size={17} /> : <MoonIcon size={17} />}
+      </button>
       <section className="login-panel">
         <div className="login-card">
           <div className="login-brand-inline">
