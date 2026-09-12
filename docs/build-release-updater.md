@@ -38,7 +38,7 @@ The profile is stored only in Key Manager's OS application config directory, not
 
 1. `VERSION` — validate strict SemVer and require the requested version to be newer than the source version.
 2. `BUILD` — bump the configured JSON version field, synchronize a matching Flutter `pubspec.yaml` build-name when present, then run the configured build command.
-3. `VALIDATE` — require release artifacts and at least one manifest/publish pointer. JSON manifests are checked against the requested version; compatible `releaseNotes`, `message`, or `notes` fields receive the entered release notes.
+3. `VALIDATE` — require release artifacts and at least one manifest/publish pointer. JSON manifests and Electron Builder YAML manifests are checked against the requested version; compatible JSON `releaseNotes`, `message`, or `notes` fields receive the entered release notes. If the output contains versioned artifacts but none match the requested release, validation fails instead of publishing stale installers.
 4. `UPLOAD_ARTIFACT` — upload ordinary artifacts first.
 5. `UPLOAD_MANIFEST` — upload manifest/publish-pointer files last.
 6. `COMPLETE` — return application, version, R2 destination, uploaded files, build output and uploader output.
@@ -47,7 +47,7 @@ The build child process receives `KM_RELEASE_VERSION` and `KM_RELEASE_NOTES`. Ap
 
 If `BUILD`, `VALIDATE`, or R2 upload fails, the configured source version metadata is restored. Build stdout/stderr and uploader stdout/stderr are retained in the returned error, so the Build / Publish log remains useful on failed commands.
 
-Build output folders can contain stale installers from older releases. When at least one ordinary artifact name contains the requested version, the external flow publishes only ordinary artifacts for that version plus the manifest/publish pointer.
+Build output folders can contain stale installers from older releases. The external flow publishes artifacts for the requested version plus unversioned support files, filters older versioned artifacts, and fails validation when it finds only stale versioned builds.
 
 ### R2 credentials and atomic publish
 
