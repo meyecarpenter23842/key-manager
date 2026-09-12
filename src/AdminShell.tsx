@@ -9,14 +9,15 @@ import { DevicesPage } from "./DevicesPage";
 import { LicensesPage } from "./LicensesPage";
 import { ReleaseManagerPage } from "./ReleaseManagerPage";
 import { TeamPage } from "./TeamPage";
-import { AlertIcon, AppIcon, CheckIcon, ChevronLeftIcon, ChevronRightIcon, GridIcon, KeyIcon, LogOutIcon, MonitorIcon, ShieldIcon, TicketIcon, UsersIcon, XIcon } from "./icons";
+import { AlertIcon, AppIcon, CheckIcon, ChevronLeftIcon, ChevronRightIcon, GridIcon, KeyIcon, LogOutIcon, MonitorIcon, MoonIcon, ShieldIcon, SunIcon, TicketIcon, UsersIcon, XIcon } from "./icons";
 import { PackageIcon } from "./releaseIcons";
 import type { AdminIdentity } from "./types";
+import type { Theme } from "./App";
 
 type Page = "dashboard" | "licenses" | "customers" | "applications" | "releases" | "devices" | "team";
 type Toast = { id: number; tone: "success" | "danger"; title: string; detail?: string };
 
-export function AdminShell({ admin, onSignedOut }: { admin: AdminIdentity; onSignedOut: () => void }) {
+export function AdminShell({ admin, theme, onToggleTheme, onSignedOut }: { admin: AdminIdentity; theme: Theme; onToggleTheme: () => void; onSignedOut: () => void }) {
   const [page, setPage] = useState<Page>("dashboard");
   const [sidebarCompact, setSidebarCompact] = useState(false);
   const [apiOnline, setApiOnline] = useState<boolean | null>(null);
@@ -118,6 +119,15 @@ export function AdminShell({ admin, onSignedOut }: { admin: AdminIdentity; onSig
         <header className="topbar">
           <div className="topbar-title"><span>Key Manager</span><ChevronRightIcon size={14} /><strong>{titles[page]}</strong></div>
           <div className="topbar-actions">
+            <button
+              className="icon-button theme-toggle"
+              type="button"
+              onClick={onToggleTheme}
+              aria-label={theme === "dark" ? "Chuyển sang giao diện sáng" : "Chuyển sang giao diện tối"}
+              title={theme === "dark" ? "Giao diện sáng" : "Giao diện tối"}
+            >
+              {theme === "dark" ? <SunIcon size={17} /> : <MoonIcon size={17} />}
+            </button>
             <div className="admin-chip">
               <span className="admin-initial">{admin.email[0].toUpperCase()}</span>
               <div><strong>{admin.email}</strong><small>{admin.role}</small></div>
