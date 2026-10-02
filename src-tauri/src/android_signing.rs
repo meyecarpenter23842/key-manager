@@ -78,6 +78,41 @@ pub(crate) fn list_android_signing_profiles(app: AppHandle) -> Result<AndroidSig
 }
 
 #[tauri::command]
+pub(crate) fn get_legacy_android_signing_profile(
+    application_id: String,
+    app_code: String,
+) -> Result<Option<AndroidSigningProfileSummary>, String> {
+    let application_id = validate_field("applicationId", &application_id, 160)?.to_string();
+    let [keystore_env, store_password_env, alias_env, key_password_env] =
+        legacy_env_names(&app_code)?;
+
+    let keystore_path = read_legacy_env(&keystore_env);
+    let keystore_password = read_legacy_env(&store_password_env);
+    let key_alias = read_legacy_env(&alias_env);
+    let key_password = read_legacy_env(&key_password_env);
+
+    if [
+        keystore_path.as_ref(),
+        keystore_password.as_ref(),
+        key_alias.as_ref(),
+        key_password.as_ref(),
+    ]
+    .iter()
+    .all(|value| value.is_none())
+    {
+        return Ok(None);
+    }
+
+    Ok(Some(AndroidSigningProfileSummary {
+        application_id,
+        keystore_path: keystore_path.unwrap_or_default(),
+        keystore_password: keystore_password.unwrap_or_default(),
+        key_alias: key_alias.unwrap_or_default(),
+        key_password: key_password.unwrap_or_default(),
+    }))
+}
+
+#[tauri::command]
 pub(crate) fn save_android_signing_profile(
     app: AppHandle,
     input: SaveAndroidSigningProfileInput,
@@ -144,6 +179,34 @@ pub(crate) fn resolve_for_application(
         key_alias: profile.key_alias.clone(),
         key_password: profile.key_password.clone(),
     }))
+}
+
+fn legacy_env_names(app_code: &str) -> Result<[String; 4], String> {
+    let prefix = env_prefix(app_code)?;
+    Ok([
+        format!("{prefix}_ANDROID_KEYSTORE"),
+        format!("{prefix}_ANDROID_KEYSTORE_PASSWORD"),
+        format!("{prefix}_ANDROID_KEY_ALIAS"),
+        format!("{prefix}_ANDROID_KEY_PASSWORD"),
+    ])
+}
+
+fn read_legacy_env(name: &str) -> Option<String> {
+    std::env::var(name)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .or_else(|| read_windows_user_env(name))
+}
+
+#[cfg(windows)]
+fn read_windows_user_env(name: &str) -> Option<String> {
+    windows_user_env::read(name)
+}
+
+#[cfg(not(windows))]
+fn read_windows_user_env(_name: &str) -> Option<String> {
+    None
 }
 
 pub(crate) fn env_prefix(app_code: &str) -> Result<String, String> {
@@ -348,6 +411,77 @@ fn dpapi_unprotect(_input: &[u8]) -> Result<Vec<u8>, String> {
 }
 
 #[cfg(windows)]
+mod windows_user_env {
+    use std::{ffi::c_void, ptr};
+
+    type HKey = *mut c_void;
+    const HKEY_CURRENT_USER: HKey = 0x80000001usize as HKey;
+    const RRF_RT_REG_SZ: u32 = 0x00000002;
+    const RRF_RT_REG_EXPAND_SZ: u32 = 0x00000004;
+
+    #[link(name = "Advapi32")]
+    extern "system" {
+        fn RegGetValueW(
+            hkey: HKey,
+            sub_key: *const u16,
+            value: *const u16,
+            flags: u32,
+            value_type: *mut u32,
+            data: *mut c_void,
+            data_size: *mut u32,
+        ) -> i32;
+    }
+
+    pub(super) fn read(name: &str) -> Option<String> {
+        let sub_key = wide("Environment");
+        let value_name = wide(name);
+        let flags = RRF_RT_REG_SZ | RRF_RT_REG_EXPAND_SZ;
+        let mut data_size = 0u32;
+        let status = unsafe {
+            RegGetValueW(
+                HKEY_CURRENT_USER,
+                sub_key.as_ptr(),
+                value_name.as_ptr(),
+                flags,
+                ptr::null_mut(),
+                ptr::null_mut(),
+                &mut data_size,
+            )
+        };
+        if status != 0 || data_size < 2 {
+            return None;
+        }
+
+        let mut buffer = vec![0u16; (data_size as usize).div_ceil(2)];
+        let status = unsafe {
+            RegGetValueW(
+                HKEY_CURRENT_USER,
+                sub_key.as_ptr(),
+                value_name.as_ptr(),
+                flags,
+                ptr::null_mut(),
+                buffer.as_mut_ptr().cast::<c_void>(),
+                &mut data_size,
+            )
+        };
+        if status != 0 {
+            return None;
+        }
+
+        let end = buffer
+            .iter()
+            .position(|character| *character == 0)
+            .unwrap_or(buffer.len());
+        let value = String::from_utf16_lossy(&buffer[..end]).trim().to_string();
+        (!value.is_empty()).then_some(value)
+    }
+
+    fn wide(value: &str) -> Vec<u16> {
+        value.encode_utf16().chain(std::iter::once(0)).collect()
+    }
+}
+
+#[cfg(windows)]
 mod dpapi {
     use std::{ffi::c_void, ptr, slice};
 
@@ -455,7 +589,10 @@ mod dpapi {
 
 #[cfg(test)]
 mod tests {
-    use super::{env_prefix, hex_decode, hex_encode, to_summary, StoredAndroidSigningProfile};
+    use super::{
+        env_prefix, hex_decode, hex_encode, legacy_env_names, to_summary,
+        StoredAndroidSigningProfile,
+    };
 
     #[test]
     fn encrypted_payload_hex_round_trips() {
@@ -485,6 +622,19 @@ mod tests {
         assert_eq!(env_prefix("mcp-app").unwrap(), "MCP_APP");
         assert_eq!(env_prefix("ordering app").unwrap(), "ORDERING_APP");
         assert!(env_prefix("123").is_err());
+    }
+
+    #[test]
+    fn legacy_environment_names_follow_app_prefix() {
+        assert_eq!(
+            legacy_env_names("retail").unwrap(),
+            [
+                "RETAIL_ANDROID_KEYSTORE",
+                "RETAIL_ANDROID_KEYSTORE_PASSWORD",
+                "RETAIL_ANDROID_KEY_ALIAS",
+                "RETAIL_ANDROID_KEY_PASSWORD",
+            ]
+        );
     }
 
     #[cfg(windows)]

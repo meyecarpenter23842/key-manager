@@ -12,6 +12,7 @@ import {
   deleteKeyManagerDraftRelease,
   deleteR2CredentialProfile,
   getExternalReleaseStatus,
+  getLegacyAndroidSigningProfile,
   getReleaseManagerConfig,
   installKeyManagerUpdate,
   listAndroidSigningProfiles,
@@ -103,6 +104,7 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
   const [publishing, setPublishing] = useState<ExternalPublishEditor | null>(null);
   const [editing, setEditing] = useState<ExternalReleaseProfile | null>(null);
   const [editingR2, setEditingR2] = useState<R2CredentialEditor | null>(null);
+  const [legacySigningApplicationId, setLegacySigningApplicationId] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [log, setLog] = useState("");
 
@@ -246,8 +248,37 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
     }
   }
 
-  function openProfile(application: Application) {
-    setEditing(profileByApplication.get(application.id) ?? blankProfile(application));
+  async function openProfile(application: Application) {
+    const profile = profileByApplication.get(application.id) ?? blankProfile(application);
+    if (androidSigningByApplication.has(application.id)) {
+      setLegacySigningApplicationId(null);
+      setEditing(profile);
+      return;
+    }
+
+    try {
+      setBusy(`legacy-signing:${application.id}`);
+      const legacy = await getLegacyAndroidSigningProfile(application.id, application.appCode);
+      if (legacy) {
+        setAndroidSigningState((current) => ({
+          profiles: [
+            ...current.profiles.filter((item) => item.applicationId !== application.id),
+            legacy,
+          ],
+        }));
+        setLegacySigningApplicationId(application.id);
+        setEditing({ ...profile, androidSigningEnabled: true });
+      } else {
+        setLegacySigningApplicationId(null);
+        setEditing(profile);
+      }
+    } catch (error) {
+      onError(error instanceof Error ? error : new Error(String(error)));
+      setLegacySigningApplicationId(null);
+      setEditing(profile);
+    } finally {
+      setBusy(null);
+    }
   }
 
   async function saveProfile(event: FormEvent<HTMLFormElement>) {
@@ -297,6 +328,7 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
         listAndroidSigningProfiles().then(setAndroidSigningState),
       ]);
       setEditing(null);
+      setLegacySigningApplicationId(null);
       notify(`Đã lưu cấu hình ${profile.appCode}`);
     } catch (error) {
       onError(error instanceof Error ? error : new Error(String(error)));
@@ -573,7 +605,7 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
                   ) : <span>Chưa cấu hình build/R2</span>}
                 </div>
                 <div className="release-row-actions">
-                  <button className="button ghost" type="button" disabled={Boolean(busy)} onClick={() => openProfile(application)}>Cấu hình</button>
+                  <button className="button ghost" type="button" disabled={Boolean(busy)} onClick={() => void openProfile(application)}>{busy === `legacy-signing:${application.id}` ? "Đang đọc signing…" : "Cấu hình"}</button>
                   <button className="button primary" type="button" disabled={!profile || Boolean(busy)} onClick={() => void openExternalPublish(application)}>
                     <UploadIcon size={16} /> {busy === `external-status:${application.id}` ? "Đang đọc version…" : busy === `external:${application.id}` ? "Đang publish…" : "Phát hành R2"}
                   </button>
@@ -623,6 +655,11 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
               <span className="field-label">Android signing</span>
               <span><input name="androidSigningEnabled" type="checkbox" defaultChecked={editing.androidSigningEnabled} /> Key Manager quản lý signing cho ứng dụng này</span>
             </label>
+            {legacySigningApplicationId === editing.applicationId ? (
+              <div className="r2-secret-note">
+                Đã tự nạp signing cũ từ <code>{editing.appCode}_ANDROID_*</code> trong Windows User Environment. Kiểm tra 4 giá trị bên dưới rồi bấm <strong>Lưu cấu hình</strong> để chuyển chúng vào vault DPAPI của Key Manager.
+              </div>
+            ) : null}
             {(() => {
               const signing = androidSigningByApplication.get(editing.applicationId);
               return (

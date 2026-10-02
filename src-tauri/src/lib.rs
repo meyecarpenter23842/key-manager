@@ -222,6 +222,7 @@ pub fn run() {
             admin_api::ensure_admin_api,
             admin_api::admin_api_runtime_status,
             android_signing::list_android_signing_profiles,
+            android_signing::get_legacy_android_signing_profile,
             android_signing::save_android_signing_profile,
             android_signing::delete_android_signing_profile,
             r2_credentials::list_r2_credential_profiles,
