@@ -70,9 +70,7 @@ impl Default for AndroidSigningVault {
 }
 
 #[tauri::command]
-pub(crate) fn list_android_signing_profiles(
-    app: AppHandle,
-) -> Result<AndroidSigningState, String> {
+pub(crate) fn list_android_signing_profiles(app: AppHandle) -> Result<AndroidSigningState, String> {
     let vault = load_vault(&app)?;
     Ok(AndroidSigningState {
         profiles: vault.profiles.iter().map(to_summary).collect(),
@@ -306,7 +304,9 @@ fn hex_encode(bytes: &[u8]) -> String {
 fn hex_decode(value: &str) -> Result<Vec<u8>, String> {
     let bytes = value.as_bytes();
     if bytes.len() % 2 != 0 {
-        return Err("ANDROID_SIGNING_FORMAT_INVALID: encrypted payload is not valid hex".to_string());
+        return Err(
+            "ANDROID_SIGNING_FORMAT_INVALID: encrypted payload is not valid hex".to_string(),
+        );
     }
 
     let mut output = Vec::with_capacity(bytes.len() / 2);
@@ -438,7 +438,9 @@ mod dpapi {
             ));
         }
         if output_blob.pb_data.is_null() {
-            return Err("ANDROID_SIGNING_DPAPI_FAILED: Windows returned an empty buffer".to_string());
+            return Err(
+                "ANDROID_SIGNING_DPAPI_FAILED: Windows returned an empty buffer".to_string(),
+            );
         }
 
         let output = unsafe {
