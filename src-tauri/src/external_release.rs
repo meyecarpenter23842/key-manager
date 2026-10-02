@@ -70,14 +70,11 @@ pub(crate) fn get_external_release_status(
 ) -> Result<ExternalReleaseStatus, String> {
     let profile = load_profile(&app, &application_id)?;
     validate_profile(&profile)?;
-    let signing = if profile.android_signing_enabled {
+    if profile.android_signing_enabled {
         let credentials = android_signing::resolve_for_application(&app, &application_id)?
             .ok_or_else(|| "ANDROID_SIGNING_MISSING: this application requires an Android signing profile".to_string())?;
         android_signing::validate_keystore(&credentials)?;
-        Some(credentials)
-    } else {
-        None
-    };
+    }
 
     let source = canonical_existing_dir(Path::new(&profile.source_dir), "application source")?;
     let version_file = resolve_path(&source, &profile.version_file);
@@ -116,6 +113,15 @@ pub(crate) fn package_external_release(
             }
         }
     }
+
+    let signing = if profile.android_signing_enabled {
+        let credentials = android_signing::resolve_for_application(&app, &application_id)?
+            .ok_or_else(|| "ANDROID_SIGNING_MISSING: this application requires an Android signing profile".to_string())?;
+        android_signing::validate_keystore(&credentials)?;
+        Some(credentials)
+    } else {
+        None
+    };
 
     let source = canonical_existing_dir(Path::new(&profile.source_dir), "application source")?;
     let version_file = resolve_path(&source, &profile.version_file);
