@@ -23,8 +23,8 @@ pub(crate) struct R2CredentialProfileSummary {
     pub id: String,
     pub name: String,
     pub account_id: String,
-    pub access_key_preview: String,
-    pub has_secret: bool,
+    pub access_key_id: String,
+    pub secret_access_key: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -300,24 +300,8 @@ fn to_summary(profile: &StoredR2CredentialProfile) -> R2CredentialProfileSummary
         id: profile.id.clone(),
         name: profile.name.clone(),
         account_id: profile.account_id.clone(),
-        access_key_preview: mask_access_key(&profile.access_key_id),
-        has_secret: !profile.secret_access_key.is_empty(),
-    }
-}
-
-fn mask_access_key(value: &str) -> String {
-    let last: String = value
-        .chars()
-        .rev()
-        .take(4)
-        .collect::<Vec<_>>()
-        .into_iter()
-        .rev()
-        .collect();
-    if last.is_empty() {
-        "****".to_string()
-    } else {
-        format!("****{last}")
+        access_key_id: profile.access_key_id.clone(),
+        secret_access_key: profile.secret_access_key.clone(),
     }
 }
 
@@ -562,7 +546,7 @@ mod dpapi {
 
 #[cfg(test)]
 mod tests {
-    use super::{hex_decode, hex_encode, mask_access_key, to_summary, StoredR2CredentialProfile};
+    use super::{hex_decode, hex_encode, to_summary, StoredR2CredentialProfile};
 
     #[test]
     fn encrypted_payload_hex_round_trips() {
@@ -572,7 +556,7 @@ mod tests {
     }
 
     #[test]
-    fn public_summary_never_contains_full_keys() {
+    fn owner_summary_contains_full_keys() {
         let stored = StoredR2CredentialProfile {
             id: "r2-test".to_string(),
             name: "Salon".to_string(),
@@ -581,17 +565,8 @@ mod tests {
             secret_access_key: "TOP-SECRET-VALUE".to_string(),
         };
         let summary = to_summary(&stored);
-        let serialized = serde_json::to_string(&summary).unwrap();
-        assert!(serialized.contains("****1234"));
-        assert!(!serialized.contains("ACCESS-SECRET-1234"));
-        assert!(!serialized.contains("TOP-SECRET-VALUE"));
-        assert!(summary.has_secret);
-    }
-
-    #[test]
-    fn access_key_preview_only_keeps_last_four_characters() {
-        assert_eq!(mask_access_key("ABCDEF1234"), "****1234");
-        assert_eq!(mask_access_key(""), "****");
+        assert_eq!(summary.access_key_id, "ACCESS-SECRET-1234");
+        assert_eq!(summary.secret_access_key, "TOP-SECRET-VALUE");
     }
 
     #[cfg(windows)]
