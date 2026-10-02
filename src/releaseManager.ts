@@ -150,6 +150,14 @@ export function listAndroidSigningProfiles(): Promise<AndroidSigningState> {
   return invoke("list_android_signing_profiles");
 }
 
+
+export function getLegacyAndroidSigningProfile(
+  applicationId: string,
+  appCode: string,
+): Promise<AndroidSigningProfileSummary | null> {
+  return invoke("get_legacy_android_signing_profile", { applicationId, appCode });
+}
+
 export function saveAndroidSigningProfile(input: SaveAndroidSigningProfileInput): Promise<AndroidSigningProfileSummary> {
   return invoke("save_android_signing_profile", { input });
 }
