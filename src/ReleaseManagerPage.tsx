@@ -268,6 +268,17 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
       r2Prefix: String(data.get("r2Prefix") || "").trim(),
     };
     const selectedR2ProfileId = String(data.get("r2CredentialProfileId") || "").trim() || null;
+    const signingInput = {
+      applicationId: profile.applicationId,
+      keystorePath: String(data.get("androidKeystorePath") || "").trim(),
+      keystorePassword: String(data.get("androidKeystorePassword") || "").trim(),
+      keyAlias: String(data.get("androidKeyAlias") || "").trim(),
+      keyPassword: String(data.get("androidKeyPassword") || "").trim(),
+    };
+    if (profile.androidSigningEnabled && Object.values(signingInput).some((value) => !value)) {
+      onError(new Error("ANDROID_SIGNING_INVALID: keystore path, passwords và key alias đều bắt buộc"));
+      return;
+    }
     const externalProfiles = config.externalProfiles.filter((item) => item.applicationId !== profile.applicationId);
     const next = { ...config, externalProfiles: [...externalProfiles, profile] };
 
@@ -276,13 +287,7 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
       const saved = await saveReleaseManagerConfig(next);
       await bindR2CredentialProfile(profile.applicationId, selectedR2ProfileId);
       if (profile.androidSigningEnabled) {
-        await saveAndroidSigningProfile({
-          applicationId: profile.applicationId,
-          keystorePath: String(data.get("androidKeystorePath") || "").trim(),
-          keystorePassword: String(data.get("androidKeystorePassword") || "").trim(),
-          keyAlias: String(data.get("androidKeyAlias") || "").trim(),
-          keyPassword: String(data.get("androidKeyPassword") || "").trim(),
-        });
+        await saveAndroidSigningProfile(signingInput);
       } else {
         await deleteAndroidSigningProfile(profile.applicationId);
       }
