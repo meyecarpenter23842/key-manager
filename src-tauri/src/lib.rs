@@ -1,4 +1,5 @@
 mod admin_api;
+mod android_signing;
 mod external_release;
 mod license_key_secret;
 mod r2_credentials;
@@ -220,6 +221,9 @@ pub fn run() {
             configure_admin_api,
             admin_api::ensure_admin_api,
             admin_api::admin_api_runtime_status,
+            android_signing::list_android_signing_profiles,
+            android_signing::save_android_signing_profile,
+            android_signing::delete_android_signing_profile,
             r2_credentials::list_r2_credential_profiles,
             r2_credentials::save_r2_credential_profile,
             r2_credentials::delete_r2_credential_profile,
