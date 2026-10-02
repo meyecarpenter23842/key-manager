@@ -14,11 +14,15 @@ import {
   getExternalReleaseStatus,
   getReleaseManagerConfig,
   installKeyManagerUpdate,
+  listAndroidSigningProfiles,
   listR2CredentialProfiles,
   packageExternalApplication,
   packageKeyManager,
+  saveAndroidSigningProfile,
+  deleteAndroidSigningProfile,
   saveR2CredentialProfile,
   saveReleaseManagerConfig,
+  type AndroidSigningState,
   type ExternalReleaseProfile,
   type PackageResult,
   type R2CredentialProfileSummary,
@@ -32,8 +36,8 @@ interface R2CredentialEditor {
   id: string | null;
   name: string;
   accountId: string;
-  accessKeyPreview: string;
-  hasSecret: boolean;
+  accessKeyId: string;
+  secretAccessKey: string;
 }
 
 interface ExternalPublishEditor {
@@ -45,11 +49,13 @@ interface ExternalPublishEditor {
 }
 
 const emptyR2State: R2CredentialState = { profiles: [], bindings: [] };
+const emptyAndroidSigningState: AndroidSigningState = { profiles: [] };
 
 function blankProfile(application: Application): ExternalReleaseProfile {
   return {
     applicationId: application.id,
     appCode: application.appCode,
+    androidSigningEnabled: false,
     sourceDir: "",
     buildCommand: "",
     outputDir: "dist",
@@ -63,7 +69,7 @@ function blankProfile(application: Application): ExternalReleaseProfile {
 }
 
 function blankR2Editor(): R2CredentialEditor {
-  return { id: null, name: "", accountId: "", accessKeyPreview: "", hasSecret: false };
+  return { id: null, name: "", accountId: "", accessKeyId: "", secretAccessKey: "" };
 }
 
 function editorFromR2Profile(profile: R2CredentialProfileSummary): R2CredentialEditor {
@@ -71,8 +77,8 @@ function editorFromR2Profile(profile: R2CredentialProfileSummary): R2CredentialE
     id: profile.id,
     name: profile.name,
     accountId: profile.accountId,
-    accessKeyPreview: profile.accessKeyPreview,
-    hasSecret: profile.hasSecret,
+    accessKeyId: profile.accessKeyId,
+    secretAccessKey: profile.secretAccessKey,
   };
 }
 
@@ -89,6 +95,7 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
   const [config, setConfig] = useState<ReleaseManagerConfig | null>(null);
   const [applications, setApplications] = useState<Application[]>([]);
   const [r2State, setR2State] = useState<R2CredentialState>(emptyR2State);
+  const [androidSigningState, setAndroidSigningState] = useState<AndroidSigningState>(emptyAndroidSigningState);
   const [update, setUpdate] = useState<SelfUpdateStatus | null>(null);
   const [newVersion, setNewVersion] = useState("");
   const [releaseNotes, setReleaseNotes] = useState("");
@@ -107,12 +114,17 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
         onError(error instanceof Error ? error : new Error(String(error)));
         return emptyR2State;
       }),
+      listAndroidSigningProfiles().catch((error) => {
+        onError(error instanceof Error ? error : new Error(String(error)));
+        return emptyAndroidSigningState;
+      }),
       checkKeyManagerUpdate().catch(() => null),
     ])
-      .then(([loadedConfig, loadedApplications, loadedR2State, loadedUpdate]) => {
+      .then(([loadedConfig, loadedApplications, loadedR2State, loadedAndroidSigningState, loadedUpdate]) => {
         setConfig(loadedConfig);
         setApplications(loadedApplications.applications);
         setR2State(loadedR2State);
+        setAndroidSigningState(loadedAndroidSigningState);
         setUpdate(loadedUpdate);
         setNewVersion((current) => current || nextPatchVersion(loadedUpdate?.currentVersion));
       })
@@ -127,6 +139,11 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
   const r2ProfileById = useMemo(
     () => new Map(r2State.profiles.map((profile) => [profile.id, profile])),
     [r2State.profiles],
+  );
+
+  const androidSigningByApplication = useMemo(
+    () => new Map(androidSigningState.profiles.map((profile) => [profile.applicationId, profile])),
+    [androidSigningState.profiles],
   );
 
   const r2BindingByApplication = useMemo(
@@ -239,6 +256,7 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
     const data = new FormData(event.currentTarget);
     const profile: ExternalReleaseProfile = {
       ...editing,
+      androidSigningEnabled: data.get("androidSigningEnabled") === "on",
       sourceDir: String(data.get("sourceDir") || "").trim(),
       buildCommand: String(data.get("buildCommand") || "").trim(),
       outputDir: String(data.get("outputDir") || "").trim(),
@@ -257,8 +275,22 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
       setBusy("save-external-profile");
       const saved = await saveReleaseManagerConfig(next);
       await bindR2CredentialProfile(profile.applicationId, selectedR2ProfileId);
+      if (profile.androidSigningEnabled) {
+        await saveAndroidSigningProfile({
+          applicationId: profile.applicationId,
+          keystorePath: String(data.get("androidKeystorePath") || "").trim(),
+          keystorePassword: String(data.get("androidKeystorePassword") || "").trim(),
+          keyAlias: String(data.get("androidKeyAlias") || "").trim(),
+          keyPassword: String(data.get("androidKeyPassword") || "").trim(),
+        });
+      } else {
+        await deleteAndroidSigningProfile(profile.applicationId);
+      }
       setConfig(saved);
-      await refreshR2State();
+      await Promise.all([
+        refreshR2State(),
+        listAndroidSigningProfiles().then(setAndroidSigningState),
+      ]);
       setEditing(null);
       notify(`Đã lưu cấu hình ${profile.appCode}`);
     } catch (error) {
@@ -474,7 +506,7 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
         </div>
 
         <div className="r2-secret-note">
-          Tài khoản R2 được lưu riêng trên máy này và mã hóa bằng Windows DPAPI. Secret không trả lại frontend sau khi lưu. Nếu một ứng dụng không chọn tài khoản R2, Key Manager mới dùng <code>R2_ACCOUNT_ID</code>, <code>R2_ACCESS_KEY_ID</code>, <code>R2_SECRET_ACCESS_KEY</code> làm fallback cho CI.
+          Tài khoản R2 được lưu riêng trên máy này và mã hóa bằng Windows DPAPI. Owner local nhìn thấy đầy đủ Access Key và Secret đã lưu. Nếu một ứng dụng không chọn tài khoản R2, Key Manager mới dùng <code>R2_ACCOUNT_ID</code>, <code>R2_ACCESS_KEY_ID</code>, <code>R2_SECRET_ACCESS_KEY</code> làm fallback cho CI.
         </div>
 
         <div className="r2-vault">
@@ -497,7 +529,8 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
                     <div className="r2-profile-main">
                       <strong>{profile.name}</strong>
                       <small>Account: {profile.accountId}</small>
-                      <small>Access key: {profile.accessKeyPreview} · Secret: {profile.hasSecret ? "Đã lưu" : "Chưa có"}</small>
+                      <small>Access key: {profile.accessKeyId}</small>
+                      <small>Secret: {profile.secretAccessKey}</small>
                       <span>{usedBy ? `${usedBy} ứng dụng đang dùng` : "Chưa gắn ứng dụng"}</span>
                     </div>
                     <div className="r2-profile-actions">
@@ -530,6 +563,7 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
                       <strong>{profile.r2Bucket}</strong>
                       <small>{credential ? `R2: ${credential.name}` : credentialId ? "R2 profile không còn tồn tại" : "R2: ENV / CI fallback"}</small>
                       <small>{profile.buildCommand}</small>
+                      <small>{profile.androidSigningEnabled ? "Android signing: Key Manager" : "Android signing: không dùng"}</small>
                     </>
                   ) : <span>Chưa cấu hình build/R2</span>}
                 </div>
@@ -580,6 +614,21 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
               <Field label="Build output"><input name="outputDir" defaultValue={editing.outputDir} required /></Field>
             </div>
             <Field label="Build command"><input name="buildCommand" defaultValue={editing.buildCommand} required /></Field>
+            <label className="field">
+              <span className="field-label">Android signing</span>
+              <span><input name="androidSigningEnabled" type="checkbox" defaultChecked={editing.androidSigningEnabled} /> Key Manager quản lý signing cho ứng dụng này</span>
+            </label>
+            {(() => {
+              const signing = androidSigningByApplication.get(editing.applicationId);
+              return (
+                <div className="form-grid two">
+                  <Field label="Keystore path"><input name="androidKeystorePath" defaultValue={signing?.keystorePath ?? ""} placeholder="F:\\signing\\app-release.jks" /></Field>
+                  <Field label="Key alias"><input name="androidKeyAlias" defaultValue={signing?.keyAlias ?? ""} /></Field>
+                  <Field label="Keystore password"><input name="androidKeystorePassword" type="text" autoComplete="off" defaultValue={signing?.keystorePassword ?? ""} /></Field>
+                  <Field label="Key password"><input name="androidKeyPassword" type="text" autoComplete="off" defaultValue={signing?.keyPassword ?? ""} /></Field>
+                </div>
+              );
+            })()}
             <div className="form-grid two">
               <Field label="Version file"><input name="versionFile" defaultValue={editing.versionFile} required /></Field>
               <Field label="Version field"><input name="versionField" defaultValue={editing.versionField} required /></Field>
@@ -615,11 +664,11 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
           <form className="modal-form" onSubmit={(event) => void saveR2Profile(event)}>
             <Field label="Tên tài khoản"><input name="name" defaultValue={editingR2.name} placeholder="Ví dụ: Beauty Salon" required /></Field>
             <Field label="Account ID"><input name="accountId" defaultValue={editingR2.accountId} autoComplete="off" required /></Field>
-            <Field label="Access Key ID" hint={editingR2.id ? `Đang lưu ${editingR2.accessKeyPreview}. Để trống nếu không đổi.` : undefined}>
-              <input name="accessKeyId" autoComplete="off" required={!editingR2.id} placeholder={editingR2.id ? "Để trống để giữ key cũ" : "R2 Access Key ID"} />
+            <Field label="Access Key ID">
+              <input name="accessKeyId" type="text" autoComplete="off" defaultValue={editingR2.accessKeyId} required />
             </Field>
-            <Field label="Secret Access Key" hint={editingR2.id && editingR2.hasSecret ? "Secret đã được lưu. Để trống nếu không đổi." : undefined}>
-              <input name="secretAccessKey" type="password" autoComplete="new-password" required={!editingR2.id} placeholder={editingR2.id ? "Để trống để giữ secret cũ" : "R2 Secret Access Key"} />
+            <Field label="Secret Access Key">
+              <input name="secretAccessKey" type="text" autoComplete="off" defaultValue={editingR2.secretAccessKey} required />
             </Field>
             <div className="modal-actions">
               <button className="button ghost" type="button" onClick={() => setEditingR2(null)}>Hủy</button>
