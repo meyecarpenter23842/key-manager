@@ -1,4 +1,5 @@
 use crate::{
+    android_signing,
     r2_credentials,
     release_manager::{ExternalReleaseProfile, PackageResult, ReleaseArtifact},
 };
@@ -69,6 +70,15 @@ pub(crate) fn get_external_release_status(
 ) -> Result<ExternalReleaseStatus, String> {
     let profile = load_profile(&app, &application_id)?;
     validate_profile(&profile)?;
+    let signing = if profile.android_signing_enabled {
+        let credentials = android_signing::resolve_for_application(&app, &application_id)?
+            .ok_or_else(|| "ANDROID_SIGNING_MISSING: this application requires an Android signing profile".to_string())?;
+        android_signing::validate_keystore(&credentials)?;
+        Some(credentials)
+    } else {
+        None
+    };
+
     let source = canonical_existing_dir(Path::new(&profile.source_dir), "application source")?;
     let version_file = resolve_path(&source, &profile.version_file);
     let current_version =
@@ -147,7 +157,7 @@ pub(crate) fn package_external_release(
         &format!("{} -> {}", current_version, version),
     )];
 
-    let build = match run_shell(&profile.build_command, &source, &version, &notes) {
+    let build = match run_shell(&profile.build_command, &source, &version, &notes, &profile.app_code, signing.as_ref()) {
         Ok(output) => output,
         Err(error) => return Err(with_rollback(log, "BUILD", error, &backup)),
     };
@@ -1062,7 +1072,14 @@ fn resource_file(app: &AppHandle, name: &str) -> Result<PathBuf, String> {
     Err(format!("RESOURCE_NOT_FOUND: {name}"))
 }
 
-fn run_shell(command: &str, cwd: &Path, version: &str, notes: &str) -> Result<Output, String> {
+fn run_shell(
+    command: &str,
+    cwd: &Path,
+    version: &str,
+    notes: &str,
+    app_code: &str,
+    signing: Option<&android_signing::AndroidSigningResolved>,
+) -> Result<Output, String> {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -1071,7 +1088,16 @@ fn run_shell(command: &str, cwd: &Path, version: &str, notes: &str) -> Result<Ou
         process.args(["/D", "/S", "/C", command]);
         process
             .env(RELEASE_VERSION_ENV, version)
-            .env(RELEASE_NOTES_ENV, notes)
+            .env(RELEASE_NOTES_ENV, notes);
+        if let Some(signing) = signing {
+            let prefix = android_signing::env_prefix(app_code)?;
+            process
+                .env(format!("{prefix}_ANDROID_KEYSTORE"), &signing.keystore_path)
+                .env(format!("{prefix}_ANDROID_KEYSTORE_PASSWORD"), &signing.keystore_password)
+                .env(format!("{prefix}_ANDROID_KEY_ALIAS"), &signing.key_alias)
+                .env(format!("{prefix}_ANDROID_KEY_PASSWORD"), &signing.key_password);
+        }
+        process
             .current_dir(cwd)
             .output()
             .map_err(|error| format!("BUILD_START_FAILED: {error}"))
@@ -1079,10 +1105,20 @@ fn run_shell(command: &str, cwd: &Path, version: &str, notes: &str) -> Result<Ou
 
     #[cfg(not(windows))]
     {
-        Command::new("sh")
+        let mut process = Command::new("sh");
+        process
             .args(["-lc", command])
             .env(RELEASE_VERSION_ENV, version)
-            .env(RELEASE_NOTES_ENV, notes)
+            .env(RELEASE_NOTES_ENV, notes);
+        if let Some(signing) = signing {
+            let prefix = android_signing::env_prefix(app_code)?;
+            process
+                .env(format!("{prefix}_ANDROID_KEYSTORE"), &signing.keystore_path)
+                .env(format!("{prefix}_ANDROID_KEYSTORE_PASSWORD"), &signing.keystore_password)
+                .env(format!("{prefix}_ANDROID_KEY_ALIAS"), &signing.key_alias)
+                .env(format!("{prefix}_ANDROID_KEY_PASSWORD"), &signing.key_password);
+        }
+        process
             .current_dir(cwd)
             .output()
             .map_err(|error| format!("BUILD_START_FAILED: {error}"))
