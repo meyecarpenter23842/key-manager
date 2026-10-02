@@ -20,6 +20,8 @@ const R2_SECRET_ENV: &str = "R2_SECRET_ACCESS_KEY";
 pub struct ExternalReleaseProfile {
     pub application_id: String,
     pub app_code: String,
+    #[serde(default)]
+    pub android_signing_enabled: bool,
     pub source_dir: String,
     pub build_command: String,
     pub output_dir: String,
