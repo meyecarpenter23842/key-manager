@@ -73,7 +73,7 @@ export interface AndroidSigningState {
   profiles: AndroidSigningProfileSummary[];
 }
 
-export interface SaveAndroidSigningProfileInput extends AndroidSigningProfileSummary {}
+export type SaveAndroidSigningProfileInput = AndroidSigningProfileSummary;
 
 export interface R2CredentialBindingSummary {
   applicationId: string;
