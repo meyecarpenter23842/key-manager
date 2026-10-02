@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 export interface ExternalReleaseProfile {
   applicationId: string;
   appCode: string;
+  androidSigningEnabled: boolean;
   sourceDir: string;
   buildCommand: string;
   outputDir: string;
@@ -56,9 +57,23 @@ export interface R2CredentialProfileSummary {
   id: string;
   name: string;
   accountId: string;
-  accessKeyPreview: string;
-  hasSecret: boolean;
+  accessKeyId: string;
+  secretAccessKey: string;
 }
+
+export interface AndroidSigningProfileSummary {
+  applicationId: string;
+  keystorePath: string;
+  keystorePassword: string;
+  keyAlias: string;
+  keyPassword: string;
+}
+
+export interface AndroidSigningState {
+  profiles: AndroidSigningProfileSummary[];
+}
+
+export interface SaveAndroidSigningProfileInput extends AndroidSigningProfileSummary {}
 
 export interface R2CredentialBindingSummary {
   applicationId: string;
@@ -128,4 +143,17 @@ export function deleteR2CredentialProfile(id: string): Promise<void> {
 
 export function bindR2CredentialProfile(applicationId: string, credentialProfileId: string | null): Promise<void> {
   return invoke("bind_r2_credential_profile", { applicationId, credentialProfileId });
+}
+
+
+export function listAndroidSigningProfiles(): Promise<AndroidSigningState> {
+  return invoke("list_android_signing_profiles");
+}
+
+export function saveAndroidSigningProfile(input: SaveAndroidSigningProfileInput): Promise<AndroidSigningProfileSummary> {
+  return invoke("save_android_signing_profile", { input });
+}
+
+export function deleteAndroidSigningProfile(applicationId: string): Promise<void> {
+  return invoke("delete_android_signing_profile", { applicationId });
 }
