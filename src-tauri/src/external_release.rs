@@ -1,6 +1,5 @@
 use crate::{
-    android_signing,
-    r2_credentials,
+    android_signing, r2_credentials,
     release_manager::{ExternalReleaseProfile, PackageResult, ReleaseArtifact},
 };
 use serde::Serialize;
@@ -72,7 +71,10 @@ pub(crate) fn get_external_release_status(
     validate_profile(&profile)?;
     if profile.android_signing_enabled {
         let credentials = android_signing::resolve_for_application(&app, &application_id)?
-            .ok_or_else(|| "ANDROID_SIGNING_MISSING: this application requires an Android signing profile".to_string())?;
+            .ok_or_else(|| {
+                "ANDROID_SIGNING_MISSING: this application requires an Android signing profile"
+                    .to_string()
+            })?;
         android_signing::validate_keystore(&credentials)?;
     }
 
@@ -116,7 +118,10 @@ pub(crate) fn package_external_release(
 
     let signing = if profile.android_signing_enabled {
         let credentials = android_signing::resolve_for_application(&app, &application_id)?
-            .ok_or_else(|| "ANDROID_SIGNING_MISSING: this application requires an Android signing profile".to_string())?;
+            .ok_or_else(|| {
+                "ANDROID_SIGNING_MISSING: this application requires an Android signing profile"
+                    .to_string()
+            })?;
         android_signing::validate_keystore(&credentials)?;
         Some(credentials)
     } else {
@@ -163,7 +168,14 @@ pub(crate) fn package_external_release(
         &format!("{} -> {}", current_version, version),
     )];
 
-    let build = match run_shell(&profile.build_command, &source, &version, &notes, &profile.app_code, signing.as_ref()) {
+    let build = match run_shell(
+        &profile.build_command,
+        &source,
+        &version,
+        &notes,
+        &profile.app_code,
+        signing.as_ref(),
+    ) {
         Ok(output) => output,
         Err(error) => return Err(with_rollback(log, "BUILD", error, &backup)),
     };
@@ -1099,9 +1111,15 @@ fn run_shell(
             let prefix = android_signing::env_prefix(app_code)?;
             process
                 .env(format!("{prefix}_ANDROID_KEYSTORE"), &signing.keystore_path)
-                .env(format!("{prefix}_ANDROID_KEYSTORE_PASSWORD"), &signing.keystore_password)
+                .env(
+                    format!("{prefix}_ANDROID_KEYSTORE_PASSWORD"),
+                    &signing.keystore_password,
+                )
                 .env(format!("{prefix}_ANDROID_KEY_ALIAS"), &signing.key_alias)
-                .env(format!("{prefix}_ANDROID_KEY_PASSWORD"), &signing.key_password);
+                .env(
+                    format!("{prefix}_ANDROID_KEY_PASSWORD"),
+                    &signing.key_password,
+                );
         }
         process
             .current_dir(cwd)
@@ -1120,9 +1138,15 @@ fn run_shell(
             let prefix = android_signing::env_prefix(app_code)?;
             process
                 .env(format!("{prefix}_ANDROID_KEYSTORE"), &signing.keystore_path)
-                .env(format!("{prefix}_ANDROID_KEYSTORE_PASSWORD"), &signing.keystore_password)
+                .env(
+                    format!("{prefix}_ANDROID_KEYSTORE_PASSWORD"),
+                    &signing.keystore_password,
+                )
                 .env(format!("{prefix}_ANDROID_KEY_ALIAS"), &signing.key_alias)
-                .env(format!("{prefix}_ANDROID_KEY_PASSWORD"), &signing.key_password);
+                .env(
+                    format!("{prefix}_ANDROID_KEY_PASSWORD"),
+                    &signing.key_password,
+                );
         }
         process
             .current_dir(cwd)
