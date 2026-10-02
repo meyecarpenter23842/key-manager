@@ -77,7 +77,6 @@ pub(crate) fn list_android_signing_profiles(app: AppHandle) -> Result<AndroidSig
     })
 }
 
-
 #[tauri::command]
 pub(crate) fn get_legacy_android_signing_profile(
     application_id: String,
@@ -624,7 +623,6 @@ mod tests {
         assert_eq!(env_prefix("ordering app").unwrap(), "ORDERING_APP");
         assert!(env_prefix("123").is_err());
     }
-
 
     #[test]
     fn legacy_environment_names_follow_app_prefix() {
