@@ -5,7 +5,7 @@ import {
   reactivateLicense, renewLicense, revealLicenseKey, revokeLicense, setLicenseDeviceLimit,
 } from "./api";
 import { Field, Modal, StatusBadge, copyTextToClipboard, type ErrorHandler, type Notify } from "./components";
-import { AlertIcon, CheckIcon, CopyIcon, KeyIcon, MonitorIcon, PlusIcon, ShieldIcon, TrashIcon, XIcon } from "./icons";
+import { AlertIcon, CheckIcon, CopyIcon, MonitorIcon, PlusIcon, ShieldIcon, TrashIcon, XIcon } from "./icons";
 import type { AdminRole, Application, Customer, License, LicenseDetail } from "./types";
 import { can, formatDateTime, formatExpiry } from "./ui";
 
@@ -115,6 +115,22 @@ export function LicenseDetailModal({ id, role, onClose, onChanged, onError, noti
   }, [id, onError]);
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { setRevealedKey(null); setKeyCopied(false); }, [id]);
+  useEffect(() => {
+    if (!detail || !can(role, "license:key-reveal") || !detail.keyRevealAvailable) return;
+    let cancelled = false;
+    setKeyBusy(true);
+    void revealLicenseKey(detail.id)
+      .then((key) => {
+        if (!cancelled) setRevealedKey(key);
+      })
+      .catch((error) => {
+        if (!cancelled) onError(error);
+      })
+      .finally(() => {
+        if (!cancelled) setKeyBusy(false);
+      });
+    return () => { cancelled = true; };
+  }, [detail?.id, detail?.keyRevealAvailable, role, onError]);
 
   async function perform(label: string, operation: () => Promise<unknown>) {
     setBusy(true);
@@ -123,26 +139,9 @@ export function LicenseDetailModal({ id, role, onClose, onChanged, onError, noti
     finally { setBusy(false); }
   }
 
-  async function loadFullKey(show: boolean): Promise<string | null> {
-    if (!detail) return null;
-    if (revealedKey) return revealedKey;
-    setKeyBusy(true);
-    try {
-      const key = await revealLicenseKey(detail.id);
-      if (show) setRevealedKey(key);
-      return key;
-    } catch (error) {
-      onError(error);
-      return null;
-    } finally {
-      setKeyBusy(false);
-    }
-  }
-
   async function copyFullKey() {
-    const key = revealedKey ?? (await loadFullKey(false));
-    if (!key) return;
-    await copyTextToClipboard(key);
+    if (!revealedKey) return;
+    await copyTextToClipboard(revealedKey);
     setKeyCopied(true);
     window.setTimeout(() => setKeyCopied(false), 1600);
   }
@@ -152,7 +151,7 @@ export function LicenseDetailModal({ id, role, onClose, onChanged, onError, noti
   const canRevealKey = can(role, "license:key-reveal");
 
   return (
-    <Modal title={detail.licenseKeyPreview} subtitle={`${detail.applicationName} · ${detail.appCode}`} onClose={onClose} wide>
+    <Modal title={revealedKey ?? detail.licenseKeyPreview} subtitle={`${detail.applicationName} · ${detail.appCode}`} onClose={onClose} wide>
       <div className="license-detail">
         <div className="detail-summary-grid">
           <div><span>Trạng thái</span><StatusBadge status={detail.status} /></div>
@@ -169,12 +168,10 @@ export function LicenseDetailModal({ id, role, onClose, onChanged, onError, noti
           <div className="license-key-box">
             <code>{revealedKey ?? detail.licenseKeyPreview}</code>
             {canRevealKey && detail.keyRevealAvailable ? <div className="license-key-actions">
-              {!revealedKey ? <button className="button secondary" type="button" disabled={keyBusy} onClick={() => void loadFullKey(true)}>{keyBusy ? <span className="spinner dark" /> : <KeyIcon size={16} />} Xem key</button> : null}
-              <button className="button secondary" type="button" disabled={keyBusy} onClick={() => void copyFullKey()}>{keyCopied ? <CheckIcon size={16} /> : <CopyIcon size={16} />}{keyCopied ? "Đã copy" : "Copy key"}</button>
-              {revealedKey ? <button className="button ghost" type="button" onClick={() => setRevealedKey(null)}>Ẩn key</button> : null}
+              <button className="button secondary" type="button" disabled={keyBusy || !revealedKey} onClick={() => void copyFullKey()}>{keyBusy ? <span className="spinner dark" /> : keyCopied ? <CheckIcon size={16} /> : <CopyIcon size={16} />}{keyCopied ? "Đã copy" : keyBusy ? "Đang giải mã…" : "Copy key"}</button>
             </div> : null}
           </div>
-          {!detail.keyRevealAvailable ? <small>Key này được tạo trước khi tính năng lưu key mã hóa được bật; full key cũ không thể khôi phục.</small> : canRevealKey ? <small>Full key chỉ được giải mã khi xem/copy; mỗi lần truy cập đều được ghi audit.</small> : <small>Full key được mã hóa và chỉ OWNER/ADMIN có quyền xem hoặc copy lại.</small>}
+          {!detail.keyRevealAvailable ? <small>Key này được tạo trước khi tính năng lưu key mã hóa được bật; full key cũ không thể khôi phục.</small> : canRevealKey ? <small>Full key được tự giải mã khi mở chi tiết; mỗi lần truy cập đều được ghi audit.</small> : <small>Full key được mã hóa và chỉ OWNER/ADMIN có quyền xem hoặc copy lại.</small>}
         </div>
         {detail.note ? <div className="note-box"><span>Ghi chú</span><p>{detail.note}</p></div> : null}
         <div className="action-strip">
