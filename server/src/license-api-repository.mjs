@@ -36,7 +36,8 @@ export class LicenseApiRepository {
               l.license_type AS "licenseType",
               l.expires_at AS "expiresAt",
               l.max_devices AS "maxDevices",
-              l.status AS "licenseStatus"
+              l.status AS "licenseStatus",
+              l.license_key_ciphertext IS NULL AS "keyRecoveryNeeded"
        FROM licenses l
        WHERE l.license_key_hash = $1`,
       [keyHash],
@@ -64,5 +65,43 @@ export class LicenseApiRepository {
     }
 
     return { application, license };
+  }
+
+  async recoverLicenseKey({ licenseId, keyCiphertext }) {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const result = await client.query(
+        `UPDATE licenses
+         SET license_key_ciphertext = $2
+         WHERE id = $1
+           AND license_key_ciphertext IS NULL
+         RETURNING id`,
+        [licenseId, keyCiphertext],
+      );
+
+      if (result.rowCount > 0) {
+        await client.query(
+          `INSERT INTO audit_logs (
+             actor_type, action, target_type, target_id, metadata
+           ) VALUES (
+             'LICENSE_API',
+             'LICENSE_KEY_RECOVERED',
+             'LICENSE',
+             $1,
+             jsonb_build_object('source', 'PUBLIC_LICENSE_VALIDATION')
+           )`,
+          [licenseId],
+        );
+      }
+
+      await client.query("COMMIT");
+      return result.rowCount > 0;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 }

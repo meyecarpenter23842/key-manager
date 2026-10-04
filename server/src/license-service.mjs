@@ -80,10 +80,12 @@ export class PublicLicenseService {
     licenseRepository,
     deviceRepository,
     offlineSigner = undefined,
+    licenseKeyProtector = null,
     clock = () => new Date(),
   }) {
     this.licenseRepository = licenseRepository;
     this.deviceRepository = deviceRepository;
+    this.licenseKeyProtector = licenseKeyProtector;
     this.offlineSigner =
       offlineSigner === undefined ? createOfflineLicenseSignerFromEnv() : offlineSigner;
     this.clock = clock;
@@ -97,6 +99,27 @@ export class PublicLicenseService {
     });
   }
 
+  async recoverLegacyKey(context, rawLicenseKey) {
+    if (
+      !context.license.keyRecoveryNeeded ||
+      !this.licenseKeyProtector ||
+      typeof this.licenseRepository.recoverLicenseKey !== "function"
+    ) {
+      return;
+    }
+
+    try {
+      const keyCiphertext = this.licenseKeyProtector.encrypt(rawLicenseKey);
+      await this.licenseRepository.recoverLicenseKey({
+        licenseId: context.license.licenseId,
+        keyCiphertext,
+      });
+      context.license.keyRecoveryNeeded = false;
+    } catch {
+      // Key recovery is best-effort and must never block a valid license request.
+    }
+  }
+
   async resolve(input, { checkVersion = true } = {}) {
     const keyHash = hashLicenseKey(input.licenseKey);
     if (!keyHash) throw domainError(404, "INVALID_LICENSE", "License is invalid");
@@ -104,6 +127,7 @@ export class PublicLicenseService {
       appCode: input.appCode,
       keyHash,
     });
+    await this.recoverLegacyKey(context, input.licenseKey);
 
     if (checkVersion && context.application.minimumVersion) {
       const comparison = compareAppVersions(input.appVersion, context.application.minimumVersion);
