@@ -167,11 +167,11 @@ export function LicenseDetailModal({ id, role, onClose, onChanged, onError, noti
           <span>License key</span>
           <div className="license-key-box">
             <code>{revealedKey ?? detail.licenseKeyPreview}</code>
-            {canRevealKey && detail.keyRevealAvailable ? <div className="license-key-actions">
+            {canRevealKey ? <div className="license-key-actions">
               <button className="button secondary" type="button" disabled={keyBusy || !revealedKey} onClick={() => void copyFullKey()}>{keyBusy ? <span className="spinner dark" /> : keyCopied ? <CheckIcon size={16} /> : <CopyIcon size={16} />}{keyCopied ? "Đã copy" : keyBusy ? "Đang giải mã…" : "Copy key"}</button>
             </div> : null}
           </div>
-          {!detail.keyRevealAvailable ? <small>Key này được tạo trước khi tính năng lưu key mã hóa được bật; full key cũ không thể khôi phục.</small> : canRevealKey ? <small>Full key được tự giải mã khi mở chi tiết; mỗi lần truy cập đều được ghi audit.</small> : <small>Full key được mã hóa và chỉ OWNER/ADMIN có quyền xem hoặc copy lại.</small>}
+          {!detail.keyRevealAvailable ? <small>Key cũ chưa có bản mã hóa. Hệ thống sẽ tự lưu lại full key ở lần thiết bị xác thực online tiếp theo; sau đó OWNER/ADMIN có thể xem và copy trực tiếp.</small> : canRevealKey ? <small>Full key được tự giải mã khi mở chi tiết; mỗi lần truy cập đều được ghi audit.</small> : <small>Full key được mã hóa và chỉ OWNER/ADMIN có quyền xem hoặc copy lại.</small>}
         </div>
         {detail.note ? <div className="note-box"><span>Ghi chú</span><p>{detail.note}</p></div> : null}
         <div className="action-strip">
