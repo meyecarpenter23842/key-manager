@@ -245,6 +245,7 @@ try {
   assert.equal(createLifetime.body.license.expiresAt, null);
   assert.equal(createLifetime.body.license.status, "ACTIVE");
   const lifetimeId = createLifetime.body.license.id;
+  const rawLifetimeKey = createLifetime.body.licenseKey;
 
   await pool.query("UPDATE licenses SET license_key_ciphertext = NULL WHERE id = $1", [lifetimeId]);
   const legacyDetail = await api(baseUrl, `/api/admin/v1/licenses/${lifetimeId}`, {
@@ -260,6 +261,44 @@ try {
   });
   assert.equal(legacyReveal.response.status, 409);
   assert.equal(legacyReveal.body.error.code, "LICENSE_KEY_UNAVAILABLE");
+
+  const recoverLegacyKey = await api(baseUrl, "/api/v1/license/activate", {
+    method: "POST",
+    body: JSON.stringify({
+      appCode: "PHASE4_APP",
+      licenseKey: rawLifetimeKey,
+      deviceId: "legacy-recovery-device",
+      deviceName: "Legacy Recovery PC",
+      os: "Windows 11",
+      appVersion: "1.0.0",
+    }),
+  });
+  assert.equal(recoverLegacyKey.response.status, 200);
+
+  const recoveredLegacyDetail = await api(baseUrl, `/api/admin/v1/licenses/${lifetimeId}`, {
+    headers: ownerHeaders,
+  });
+  assert.equal(recoveredLegacyDetail.response.status, 200);
+  assert.equal(recoveredLegacyDetail.body.license.keyRevealAvailable, true);
+  assert.equal(JSON.stringify(recoveredLegacyDetail.body).includes(rawLifetimeKey), false);
+
+  const recoveredLegacyReveal = await api(
+    baseUrl,
+    `/api/admin/v1/licenses/${lifetimeId}/reveal-key`,
+    { method: "POST", headers: ownerHeaders },
+  );
+  assert.equal(recoveredLegacyReveal.response.status, 200);
+  assert.equal(recoveredLegacyReveal.body.licenseKey, rawLifetimeKey);
+
+  const recoveryAudit = await pool.query(
+    `SELECT count(*)::int AS count
+     FROM audit_logs
+     WHERE target_type = 'LICENSE'
+       AND target_id = $1
+       AND action = 'LICENSE_KEY_RECOVERED'`,
+    [lifetimeId],
+  );
+  assert.equal(recoveryAudit.rows[0].count, 1);
 
   const lifetimeFilter = await api(baseUrl, "/api/admin/v1/licenses?licenseType=LIFETIME", {
     headers: ownerHeaders,
@@ -454,6 +493,7 @@ try {
   for (const action of [
     "LICENSE_CREATED",
     "LICENSE_KEY_REVEALED",
+    "LICENSE_KEY_RECOVERED",
     "LICENSE_RENEWED",
     "LICENSE_REVOKED",
     "LICENSE_REACTIVATED",
