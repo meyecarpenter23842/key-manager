@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 const applications = readFileSync("src/ApplicationsPage.tsx", "utf8");
 const customers = readFileSync("src/CustomersPage.tsx", "utf8");
+const licenseModals = readFileSync("src/LicenseModals.tsx", "utf8");
 
 describe("application image and customer cross-reference UI", () => {
   it("lets an admin choose and remove an application image", () => {
@@ -24,5 +25,11 @@ describe("application image and customer cross-reference UI", () => {
   it("reuses the full license detail flow from customer detail", () => {
     expect(customers).toContain("LicenseDetailModal");
     expect(customers).toContain("onOpenLicense");
+  });
+
+  it("shows the full recoverable key with a copy action in license detail", () => {
+    expect(licenseModals).toContain("revealedKey ?? detail.licenseKeyPreview");
+    expect(licenseModals).toContain('"Copy key"');
+    expect(licenseModals).toContain("lần thiết bị xác thực online tiếp theo");
   });
 });
