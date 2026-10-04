@@ -215,13 +215,14 @@ export function createAdminApiServer({
   allowedOrigins = [],
 }) {
   const devices = deviceRepository ?? new DeviceRepository(repository.pool);
+  const licenseKeyProtector = createLicenseKeyProtector(licenseKeyEncryptionKey);
   const publicLicenses =
     licenseService ??
     new PublicLicenseService({
       licenseRepository: licenseApiRepository ?? new LicenseApiRepository(repository.pool),
       deviceRepository: devices,
+      licenseKeyProtector,
     });
-  const licenseKeyProtector = createLicenseKeyProtector(licenseKeyEncryptionKey);
   const rateLimiter =
     publicRateLimiter ??
     createRateLimiter({ maxRequests: publicRateLimitMax, windowMs: publicRateLimitWindowMs });
