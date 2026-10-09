@@ -149,12 +149,12 @@ export function AdminShell({ admin, theme, onToggleTheme, onSignedOut }: { admin
         </div>
       </div>
 
-      <div className="toast-stack">
+      <div className="toast-stack" aria-label="Thông báo hệ thống">
         {toasts.map((toast) => (
-          <div key={toast.id} className={`toast toast-${toast.tone}`}>
+          <div key={toast.id} className={`toast toast-${toast.tone}`} role={toast.tone === "danger" ? "alert" : "status"}>
             {toast.tone === "success" ? <CheckIcon size={18} /> : <AlertIcon size={18} />}
             <div><strong>{toast.title}</strong>{toast.detail ? <small>{toast.detail}</small> : null}</div>
-            <button type="button" onClick={() => setToasts((current) => current.filter((item) => item.id !== toast.id))}><XIcon size={14} /></button>
+            <button type="button" aria-label={`Đóng thông báo: ${toast.title}`} onClick={() => setToasts((current) => current.filter((item) => item.id !== toast.id))}><XIcon size={14} /></button>
           </div>
         ))}
       </div>
