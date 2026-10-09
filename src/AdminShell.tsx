@@ -99,17 +99,17 @@ export function AdminShell({ admin, theme, onToggleTheme, onSignedOut }: { admin
         </div>
         <nav>
           {nav.map((item) => (
-            <button key={item.id} type="button" className={page === item.id ? "active" : ""} onClick={() => setPage(item.id)}>
+            <button key={item.id} type="button" className={page === item.id ? "active" : ""} aria-current={page === item.id ? "page" : undefined} title={item.label} onClick={() => setPage(item.id)}>
               {item.icon}<span>{item.label}</span>{page === item.id ? <i /> : null}
             </button>
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <div className="api-status-card">
+          <div className="api-status-card" title={`${apiOnline === true ? "API Online" : apiOnline === false ? "API Offline" : "Checking"} · ${apiBaseUrl()}`}>
             <span className={`connection-dot ${apiOnline === true ? "online" : apiOnline === false ? "offline" : "checking"}`} />
             <div><strong>{apiOnline ? "API Online" : apiOnline === false ? "API Offline" : "Checking"}</strong><small>{apiBaseUrl().replace(/^https?:\/\//, "")}</small></div>
           </div>
-          <button className="collapse-button" type="button" onClick={() => setSidebarCompact((value) => !value)}>
+          <button className="collapse-button" type="button" aria-label={sidebarCompact ? "Mở rộng menu" : "Thu gọn menu"} title={sidebarCompact ? "Mở rộng menu" : "Thu gọn menu"} onClick={() => setSidebarCompact((value) => !value)}>
             <ChevronLeftIcon size={17} /><span>Thu gọn menu</span>
           </button>
         </div>
