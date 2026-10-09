@@ -1,0 +1,91 @@
+/* Phase 2: shared management surface, scoped to the four core pages.
+   Semantic tokens come from workbench.css. All API and form behavior is unchanged. */
+.management-page .management-panel { background:var(--km-surface);border:1px solid var(--km-border);border-radius:12px;box-shadow:var(--km-shadow);overflow:hidden }
+.management-page .management-toolbar { display:flex;flex-wrap:wrap;gap:10px 12px;align-items:center;min-height:74px;padding:14px 18px;background:var(--km-surface);border-bottom:1px solid var(--km-border) }
+.management-page .management-toolbar .search-box { flex:1 1 260px;width:auto;max-width:470px;height:42px;border:1px solid var(--km-border);border-radius:9px;background:var(--km-surface-muted);color:var(--km-muted);padding:0 12px }
+.management-page .management-toolbar .search-box:focus-within { background:var(--km-surface);border-color:var(--km-accent);box-shadow:0 0 0 3px var(--km-focus-ring) }
+.management-page .management-toolbar .search-box input { font-size:12.5px;color:var(--km-ink);background:transparent;border:0;box-shadow:none;min-width:0 }
+.management-page .management-toolbar .search-box input::placeholder { color:var(--km-muted);opacity:1 }
+.management-page .management-toolbar .search-box button { width:28px;height:28px;color:var(--km-muted) }
+.management-page .management-toolbar > select,.management-page .management-toolbar .filter-group select { width:auto;min-width:145px;min-height:42px;height:42px;border:1px solid var(--km-border);border-radius:9px;padding:0 32px 0 12px;font-size:12px;background-color:var(--km-surface);color:var(--km-ink-secondary) }
+.management-page .filter-group { gap:9px;flex-wrap:wrap }
+.management-page .management-table-wrap { max-width:100%;overflow-x:auto;overscroll-behavior-x:contain }
+.management-page .management-table { min-width:850px;width:100%;border-collapse:collapse }
+.management-page .management-table th { height:45px;padding:10px 16px;background:var(--km-surface-muted);color:var(--km-muted);font-size:10px;font-weight:750;letter-spacing:.05em;border-bottom:1px solid var(--km-border) }
+.management-page .management-table td { padding:15px 16px;background:transparent;color:var(--km-ink-secondary);font-size:12px;line-height:1.5;border-bottom:1px solid var(--km-border) }
+.management-page .management-table tbody tr:last-child td { border-bottom:0 }
+.management-page .management-table tbody tr:hover td { background:var(--km-surface-muted) }
+.management-page .management-table tbody .cell-title { min-width:165px;gap:11px }
+.management-page .management-table .cell-title strong,.management-page .management-table .cell-stack strong { color:var(--km-ink);font-size:12px;line-height:1.45 }
+.management-page .management-table .cell-title small,.management-page .management-table .cell-stack small { color:var(--km-muted);font-size:10.5px;line-height:1.45 }
+.management-page .management-table .mono { font-size:11.5px }
+.management-page .management-table .status-badge { min-height:24px;height:auto;padding:4px 9px;font-size:10px;letter-spacing:.01em }
+.management-page .management-table .app-avatar,.management-page .management-table .customer-avatar,.management-page .management-table .device-avatar { width:34px;height:34px;border-radius:9px;font-size:11px }
+.management-page .management-table .app-avatar.large-avatar { width:38px;height:38px }
+.management-page .management-table .device-count { color:var(--km-ink-secondary);font-size:12px }
+.management-page .management-table td:last-child { white-space:nowrap }
+.management-page .management-table th:last-child { text-align:right }
+.management-page .management-table .icon-button.small { width:32px;height:32px }
+.management-page .management-table .clickable-row:hover td:first-child { box-shadow:inset 3px 0 0 var(--km-accent) }
+.management-page .pager { min-height:58px;padding:10px 18px;border-top:1px solid var(--km-border);background:var(--km-surface);color:var(--km-muted);font-size:11.5px;gap:10px }
+.management-page .pager .icon-button.small { width:34px;height:34px }
+.management-page .empty-state { padding:52px 24px;color:var(--km-muted);gap:9px }
+.management-page .empty-state-icon { background:var(--km-accent-soft);color:var(--km-accent) }
+.management-page .empty-state strong { color:var(--km-ink);font-size:14px }
+.management-page .empty-state span { font-size:12px;line-height:1.55 }
+/* Dialogs render inside the management page, not in a separate portal. */
+.management-page .modal-backdrop { padding:clamp(10px,3vw,28px) }
+.management-page .modal { background:var(--km-surface);border:1px solid var(--km-border);border-radius:14px;max-height:min(850px,94dvh) }
+.management-page .modal-header { padding:18px 22px;border-bottom:1px solid var(--km-border) }
+.management-page .modal-header h2 { color:var(--km-ink);font-size:18px;line-height:1.4 }
+.management-page .modal-header p { color:var(--km-muted);font-size:12px;line-height:1.5 }
+.management-page .modal-form { padding:22px;gap:17px }
+.management-page .field-label { color:var(--km-ink-secondary);font-size:12px;font-weight:650 }
+.management-page .field small { color:var(--km-muted);font-size:11px;line-height:1.5 }
+.management-page .modal-form input,.management-page .modal-form select,.management-page .modal-form textarea { min-height:42px;font-size:12.5px;border-color:var(--km-border);background:var(--km-surface);color:var(--km-ink) }
+.management-page .modal-actions { padding-top:18px;gap:9px;border-top-color:var(--km-border) }
+.management-page .modal-actions .button { min-height:40px;font-size:12px }
+.management-page .segmented { background:var(--km-surface-muted);border:1px solid var(--km-border) }
+.management-page .segmented button { color:var(--km-muted);font-size:12px;min-height:36px }
+.management-page .segmented button.active { background:var(--km-accent-soft);color:var(--km-accent);box-shadow:none }
+.management-page .license-detail,.management-page .customer-detail { padding:22px;gap:18px }
+.management-page .detail-summary-grid,.management-page .detail-section,.management-page .note-box { border-color:var(--km-border) }
+.management-page .detail-summary-grid > div { border-right-color:var(--km-border) }
+.management-page .detail-summary-grid strong { font-size:15px;color:var(--km-ink) }
+.management-page .detail-card { background:var(--km-surface-muted);border:1px solid var(--km-border) }
+.management-page .detail-card strong { color:var(--km-ink);font-size:12px;overflow-wrap:anywhere }
+.management-page .detail-card small,.management-page .customer-license-card small { color:var(--km-muted);font-size:10.5px }
+.management-page .detail-section h3 { color:var(--km-ink);font-size:13px }
+.management-page .note-box p { font-size:12px;color:var(--km-ink-secondary) }
+.management-page .customer-license-card { background:var(--km-surface);border-color:var(--km-border) }
+.management-page .customer-license-card:hover { border-color:var(--km-accent) }
+.management-page .customer-license-main strong,.management-page .customer-license-key strong,.management-page .customer-license-devices strong { font-size:12px;color:var(--km-ink) }
+.management-page .license-key-box code { font-size:13px }
+:root[data-theme="dark"] .management-page .management-panel,:root[data-theme="dark"] .management-page .management-toolbar,:root[data-theme="dark"] .management-page .modal,:root[data-theme="dark"] .management-page .pager { background:var(--km-surface);border-color:var(--km-border) }
+:root[data-theme="dark"] .management-page .management-table th,:root[data-theme="dark"] .management-page .management-table tbody tr:hover td { background:var(--km-surface-muted) }
+:root[data-theme="dark"] .management-page .management-table td { color:var(--km-ink-secondary);border-color:var(--km-border) }
+:root[data-theme="dark"] .management-page .management-table .cell-title strong,:root[data-theme="dark"] .management-page .management-table .cell-stack strong { color:var(--km-ink) }
+:root[data-theme="dark"] .management-page .management-toolbar > select,:root[data-theme="dark"] .management-page .management-toolbar .filter-group select,:root[data-theme="dark"] .management-page .modal-form input,:root[data-theme="dark"] .management-page .modal-form select,:root[data-theme="dark"] .management-page .modal-form textarea { background:var(--km-surface-muted);border-color:var(--km-border);color:var(--km-ink) }
+:root[data-theme="dark"] .management-page .search-box { background:var(--km-surface-muted);border-color:var(--km-border) }
+:root[data-theme="dark"] .management-page .search-box input { color:var(--km-ink);background:transparent;border:0 }
+:root[data-theme="dark"] .management-page .modal-header,:root[data-theme="dark"] .management-page .modal-actions { border-color:var(--km-border) }
+:root[data-theme="dark"] .management-page .detail-card { background:var(--km-surface-muted);border-color:var(--km-border) }
+:root[data-theme="dark"] .management-page .customer-license-card { background:var(--km-surface);border-color:var(--km-border) }
+@media (max-width:1080px) { .management-page .management-table { min-width:900px } .management-page .management-toolbar .search-box { max-width:none } }
+@media (max-width:690px) {
+ .management-page .management-toolbar { padding:12px;align-items:stretch }
+ .management-page .management-toolbar .search-box { flex-basis:100%;width:100% }
+ .management-page .management-toolbar > select { width:100% }
+ .management-page .management-toolbar .filter-group { width:100% }
+ .management-page .management-toolbar .filter-group select { flex:1 1 140px;min-width:0 }
+ .management-page .pager { padding:12px }
+ .management-page .modal-header,.management-page .modal-form,.management-page .license-detail,.management-page .customer-detail { padding:16px }
+ .management-page .form-grid.two,.management-page .form-grid.three,.management-page .detail-card-grid { grid-template-columns:minmax(0,1fr) }
+ .management-page .detail-summary-grid { grid-template-columns:repeat(2,minmax(0,1fr)) }
+ .management-page .detail-summary-grid > div { border-bottom:1px solid var(--km-border) }
+ .management-page .detail-summary-grid > div:nth-child(2n) { border-right:0 }
+ .management-page .detail-summary-grid > div:nth-last-child(-n+2) { border-bottom:0 }
+ .management-page .customer-license-card { grid-template-columns:minmax(0,1fr);gap:10px }
+ .management-page .customer-license-status { justify-items:start }
+}
+@media (prefers-reduced-motion:reduce) { .management-page .modal,.management-page .modal-backdrop,.management-page .customer-license-card { animation:none;transition:none } }

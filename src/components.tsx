@@ -121,7 +121,7 @@ export function SearchBox({ value, onChange, placeholder }: { value: string; onC
   return (
     <div className="search-box">
       <SearchIcon size={18} />
-      <input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} />
+      <input type="search" aria-label={placeholder} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} />
       {value ? <button type="button" onClick={() => onChange("")} aria-label="Xóa tìm kiếm"><XIcon size={15} /></button> : null}
     </div>
   );
