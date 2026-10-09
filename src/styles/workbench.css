@@ -275,7 +275,9 @@ body, button, input, select, textarea {
   .sidebar nav button i,
   .api-status-card div,
   .collapse-button span { display: none; }
-  .sidebar nav button, .api-status-card, .collapse-button { min-width: 0; width: 50px; margin-inline: auto; justify-content: center; padding: 0; }
+  .sidebar nav button, .api-status-card { min-width: 0; width: 50px; margin-inline: auto; justify-content: center; padding: 0; }
+  /* The narrow rail is fixed-width; do not expose a collapse action with no visible effect. */
+  .collapse-button { display: none; }
   .topbar { padding-inline: 20px; }
   .page { padding: 26px 22px 36px; }
 }
