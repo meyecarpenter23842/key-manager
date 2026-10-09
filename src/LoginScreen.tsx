@@ -150,7 +150,7 @@ export function LoginScreen({ theme, onToggleTheme, onLogin }: { theme: Theme; o
                   autoFocus
                 />
               </Field>
-              {configError ? <div className="form-error"><AlertIcon size={17} /><span><strong>Không thể khởi động Admin API</strong><small>{configError}</small></span></div> : null}
+              {configError ? <div className="form-error" role="alert"><AlertIcon size={17} /><span><strong>Không thể khởi động Admin API</strong><small>{configError}</small></span></div> : null}
               <button className="button primary full" type="submit" disabled={configBusy}>
                 {configBusy ? <span className="spinner" /> : <ShieldIcon size={18} />}
                 {configBusy ? "Đang lưu và khởi động..." : "Lưu và khởi động Admin API"}
@@ -165,7 +165,7 @@ export function LoginScreen({ theme, onToggleTheme, onLogin }: { theme: Theme; o
               <Field label="Mật khẩu">
                 <input name="password" type="password" autoComplete="current-password" placeholder="••••••••••••" required />
               </Field>
-              {error ? <div className="form-error"><AlertIcon size={17} /><span><strong>{error.message}</strong>{error.detail ? <small>{error.detail}</small> : null}</span></div> : null}
+              {error ? <div className="form-error" role="alert"><AlertIcon size={17} /><span><strong>{error.message}</strong>{error.detail ? <small>{error.detail}</small> : null}</span></div> : null}
               <button className="button primary full" type="submit" disabled={busy || apiOnline !== true}>
                 {busy ? <span className="spinner" /> : <ShieldIcon size={18} />}
                 {busy ? "Đang xác thực..." : "Đăng nhập"}

@@ -426,7 +426,7 @@ export function ReleaseManagerPage({ onError, notify }: { onError: ErrorHandler;
   }
 
   if (!config) {
-    return <div className="page"><div className="panel release-loading">Đang tải Build & Update…</div></div>;
+    return <div className="page"><div className="panel release-loading release-loading-state">Đang tải Build & Update…</div></div>;
   }
 
   return (

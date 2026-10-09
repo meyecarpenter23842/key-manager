@@ -1,0 +1,319 @@
+/*
+ * Key Manager desktop experience: finishing pass (Phase 3).
+ * Explicitly scoped to existing screens, preserving their React and API contracts.
+ * Imported after legacy theme, workbench and management layers.
+ */
+
+/* Common interaction polish: consistent states without changing any action. */
+.admin-shell .button,
+.login-shell .button {
+  font-size: 12.5px;
+  border-radius: 9px;
+}
+.admin-shell .button:not(:disabled):focus-visible,
+.login-shell .button:not(:disabled):focus-visible,
+.admin-shell .icon-button:focus-visible,
+.login-shell .icon-button:focus-visible {
+  outline: 2px solid var(--km-accent);
+  outline-offset: 3px;
+}
+.admin-shell .field-label,
+.admin-shell .modal .field-label {
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--km-ink-secondary);
+}
+.admin-shell .field > small { font-size: 11px; color: var(--km-muted); line-height: 1.5; }
+.admin-shell .modal-header h2 { font-size: 18px; line-height: 1.35; }
+.admin-shell .modal-header p { font-size: 12px; line-height: 1.55; color: var(--km-muted); }
+.admin-shell .modal-actions { gap: 9px; }
+.admin-shell .modal-actions .button { min-height: 40px; }
+
+/* Login/first-run API configuration: one visual style for both light and dark. */
+.login-shell {
+  min-height: 100vh;
+  min-height: 100dvh;
+  width: 100%;
+  padding: clamp(20px, 5vw, 56px);
+  background: var(--km-canvas);
+  overflow-y: auto;
+}
+.login-shell .login-panel { min-height: 0; width: min(476px, 100%); border-radius: 0; padding: 0; }
+.login-shell .login-card {
+  border: 1px solid var(--km-border);
+  border-radius: 16px;
+  background: var(--km-surface);
+  box-shadow: 0 20px 60px rgba(20, 40, 65, .09);
+  padding: clamp(25px, 3.8vw, 38px);
+}
+.login-shell .login-brand-inline { margin-bottom: 30px; gap: 12px; }
+.login-shell .login-brand-inline .brand-mark {
+  background: var(--km-accent-soft);
+  color: var(--km-accent);
+  border-radius: 10px;
+  box-shadow: none;
+}
+.login-shell .login-brand-inline strong { color: var(--km-ink); font-size: 15px; font-weight: 750; }
+.login-shell .login-brand-inline small { color: var(--km-muted); font-size: 10.5px; }
+.login-shell .login-title h1 { color: var(--km-ink); font-size: clamp(24px, 3vw, 29px); font-weight: 750; line-height: 1.25; }
+.login-shell .login-title p { color: var(--km-muted); font-size: 13px; line-height: 1.6; margin-bottom: 28px; }
+.login-shell .field-label { color: var(--km-ink-secondary); font-size: 12px; font-weight: 650; }
+.login-shell .field input {
+  min-height: 44px;
+  border: 1px solid var(--km-border);
+  border-radius: 9px;
+  background: var(--km-surface);
+  color: var(--km-ink);
+  font-size: 13px;
+}
+.login-shell .field input:focus { border-color: var(--km-accent); box-shadow: 0 0 0 3px var(--km-focus-ring); }
+.login-shell .button.primary {
+  background: #2b5f9f;
+  color: #fff;
+  border: 0;
+  box-shadow: none;
+  min-height: 46px;
+  font-size: 13px;
+}
+.login-shell .button.primary:hover:not(:disabled) { background: #214b80; box-shadow: none; }
+.login-shell .api-bootstrap { background: var(--km-surface-muted); border-color: var(--km-border); padding: 16px; }
+.login-shell .api-bootstrap-note { font-size: 11px; color: var(--km-muted); }
+.login-shell .form-error { border-radius: 9px; line-height: 1.5; }
+.login-shell .form-error strong { font-size: 12px; }
+.login-shell .form-error small { font-size: 11px; }
+.login-shell .login-footer { margin-top: 30px; padding-top: 18px; border-top-color: var(--km-border); }
+.login-shell .login-footer strong { font-size: 12px; color: var(--km-ink-secondary); }
+.login-shell .login-footer small { font-size: 11px; color: var(--km-muted); }
+.login-shell .login-theme-toggle { top: 20px; right: 20px; }
+.login-shell .theme-toggle { border-color: var(--km-border); background: var(--km-surface); color: var(--km-ink-secondary); }
+.login-shell .theme-toggle:hover { color: var(--km-accent); border-color: var(--km-accent); }
+
+:root[data-theme="dark"] .login-shell { background: var(--km-canvas); }
+:root[data-theme="dark"] .login-shell .login-card { background: var(--km-surface); border-color: var(--km-border); box-shadow: 0 24px 60px rgba(0,0,0,.25); }
+:root[data-theme="dark"] .login-shell .login-title h1,
+:root[data-theme="dark"] .login-shell .login-brand-inline strong { color: var(--km-ink); }
+:root[data-theme="dark"] .login-shell .login-brand-inline .brand-mark { background: var(--km-accent-soft); color: var(--km-accent); }
+:root[data-theme="dark"] .login-shell .field input,
+:root[data-theme="dark"] .login-shell .theme-toggle { background: var(--km-surface-muted); color: var(--km-ink); border-color: var(--km-border); }
+:root[data-theme="dark"] .login-shell .api-bootstrap { background: var(--km-surface-muted); border-color: var(--km-border); }
+:root[data-theme="dark"] .login-shell .button.primary { background: #356fae; color: #fff; }
+:root[data-theme="dark"] .login-shell .button.primary:hover:not(:disabled) { background: #427fbd; }
+
+/* OWNER-only Team: share the data visual hierarchy without changing role rules. */
+.team-page .management-panel { background: var(--km-surface); border-color: var(--km-border); }
+.team-page .management-table { min-width: 690px; }
+.team-page .management-table th { font-size: 10px; }
+.team-page .management-table .role-badge {
+  font-size: 10.5px;
+  padding: 5px 9px;
+  height: auto;
+  min-height: 25px;
+  background: var(--km-accent-soft);
+  color: var(--km-accent);
+}
+.team-page .management-table .cell-title { min-width: 200px; }
+.team-page .management-table .admin-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  color: var(--km-accent);
+  background: var(--km-accent-soft);
+}
+.team-page .team-create-form { gap: 18px; }
+.team-page .team-create-form input,
+.team-page .team-create-form select {
+  min-height: 44px;
+  font-size: 13px;
+  border-color: var(--km-border);
+  background: var(--km-surface);
+  color: var(--km-ink);
+}
+.team-page .team-create-form input:focus,
+.team-page .team-create-form select:focus {
+  border-color: var(--km-accent);
+  box-shadow: 0 0 0 3px var(--km-focus-ring);
+}
+:root[data-theme="dark"] .team-page .management-panel { background: var(--km-surface); border-color: var(--km-border); }
+:root[data-theme="dark"] .team-page .team-create-form input,
+:root[data-theme="dark"] .team-page .team-create-form select { background: var(--km-surface-muted); color: var(--km-ink); border-color: var(--km-border); }
+
+/* Build & Update: structured panels and legible operational data. */
+.release-page .panel {
+  background: var(--km-surface);
+  border: 1px solid var(--km-border);
+  border-radius: 12px;
+  box-shadow: var(--km-shadow);
+}
+.release-page .release-panel { padding: clamp(17px, 2vw, 24px); }
+.release-page .release-panel-heading { align-items: flex-start; gap: 16px; }
+.release-page .release-panel-heading h2 { font-size: 17px; font-weight: 750; color: var(--km-ink); }
+.release-page .release-panel-heading p { font-size: 12.5px; color: var(--km-muted); line-height: 1.6; }
+.release-page .release-local-form,
+.release-page .r2-vault,
+.release-page .release-status-grid > div {
+  background: var(--km-surface-muted);
+  border-color: var(--km-border);
+  border-radius: 11px;
+}
+.release-page .release-local-form { grid-template-columns: minmax(150px,.5fr) minmax(195px,.8fr) minmax(260px,1.35fr); gap: 14px; }
+.release-page .release-local-form .field input,
+.release-page .release-local-form .field select,
+.release-page .release-advanced input,
+.release-page .release-advanced select {
+  color: var(--km-ink);
+  background: var(--km-surface);
+  border-color: var(--km-border);
+  font-size: 12.5px;
+}
+.release-page .release-current-version,
+.release-page .release-advanced,
+.release-page .r2-profile-card,
+.release-page .r2-profile-empty,
+.release-page .release-app-row {
+  background: var(--km-surface);
+  border-color: var(--km-border);
+  border-radius: 10px;
+}
+.release-page .release-current-version span,
+.release-page .release-status-grid span,
+.release-page .release-status-grid small,
+.release-page .r2-profile-main small,
+.release-page .release-profile-summary small,
+.release-page .release-profile-summary span { color: var(--km-muted); font-size: 11px; }
+.release-page .release-current-version strong,
+.release-page .release-status-grid strong,
+.release-page .r2-profile-main strong,
+.release-page .release-profile-summary strong,
+.release-page .r2-vault-heading strong { color: var(--km-ink); }
+.release-page .release-status-grid strong { font-size: 13px; }
+.release-page .release-advanced summary { color: var(--km-ink-secondary); font-size: 12.5px; }
+.release-page .release-advanced summary:focus-visible { outline: 2px solid var(--km-accent); outline-offset: 3px; }
+.release-page .release-mode.local { color: var(--km-accent); background: var(--km-accent-soft); }
+.release-page .release-app-row { gap: 14px; }
+.release-page .release-app-row .cell-title strong { color: var(--km-ink); font-size: 12.5px; }
+.release-page .release-app-row .cell-title small { font-size: 11px; color: var(--km-muted); }
+.release-page .r2-profile-main span { color: var(--km-accent); }
+.release-page .release-row-actions { flex-wrap: wrap; gap: 8px; }
+.release-page .release-log pre {
+  max-height: 410px;
+  border-radius: 10px;
+  font: 12px/1.55 "Cascadia Code", Consolas, monospace;
+}
+.release-page .release-loading-state { color: var(--km-muted); padding: 28px; font-size: 13px; }
+.release-page .modal-header h2 { color: var(--km-ink); }
+.release-page .modal-form input:not([type="checkbox"]),
+.release-page .modal-form select,
+.release-page .modal-form textarea {
+  font-size: 12.5px;
+  color: var(--km-ink);
+  border-color: var(--km-border);
+  background: var(--km-surface);
+}
+.release-page .modal-form .field small { color: var(--km-muted); font-size: 11px; }
+:root[data-theme="dark"] .release-page .panel,
+:root[data-theme="dark"] .release-page .release-advanced,
+:root[data-theme="dark"] .release-page .release-current-version,
+:root[data-theme="dark"] .release-page .r2-profile-card,
+:root[data-theme="dark"] .release-page .r2-profile-empty,
+:root[data-theme="dark"] .release-page .release-app-row { background: var(--km-surface); border-color: var(--km-border); }
+:root[data-theme="dark"] .release-page .release-local-form,
+:root[data-theme="dark"] .release-page .r2-vault,
+:root[data-theme="dark"] .release-page .release-status-grid > div { background: var(--km-surface-muted); border-color: var(--km-border); }
+:root[data-theme="dark"] .release-page .release-current-version strong,
+:root[data-theme="dark"] .release-page .release-status-grid strong,
+:root[data-theme="dark"] .release-page .r2-profile-main strong,
+:root[data-theme="dark"] .release-page .release-profile-summary strong { color: var(--km-ink); }
+:root[data-theme="dark"] .release-page .release-local-form input,
+:root[data-theme="dark"] .release-page .release-local-form select,
+:root[data-theme="dark"] .release-page .release-advanced input,
+:root[data-theme="dark"] .release-page .modal-form input:not([type="checkbox"]),
+:root[data-theme="dark"] .release-page .modal-form select,
+:root[data-theme="dark"] .release-page .modal-form textarea { background: var(--km-surface-muted); color: var(--km-ink); border-color: var(--km-border); }
+
+/* Toasters: readable messages and full error codes/requestId, no changes to timing. */
+.admin-shell .toast-stack { width: min(400px, calc(100vw - 30px)); right: 15px; bottom: 15px; gap: 10px; }
+.admin-shell .toast {
+  grid-template-columns: 20px minmax(0,1fr) 32px;
+  gap: 12px;
+  align-items: start;
+  padding: 15px 13px 15px 15px;
+  border-radius: 11px;
+  border: 1px solid var(--km-border);
+  border-left: 3px solid var(--km-accent);
+  background: var(--km-surface);
+  box-shadow: 0 12px 35px rgba(22,40,63,.14);
+}
+.admin-shell .toast-success { border-left-color: var(--success); }
+.admin-shell .toast-danger { border-left-color: var(--danger); }
+.admin-shell .toast strong { color: var(--km-ink); font-size: 12.5px; line-height: 1.45; }
+.admin-shell .toast small { color: var(--km-muted); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.admin-shell .toast button { width: 32px; height: 32px; border-radius: 7px; color: var(--km-muted); }
+.admin-shell .toast button:hover { background: var(--km-surface-muted); color: var(--km-ink); }
+.admin-shell .toast button:focus-visible { outline: 2px solid var(--km-accent); outline-offset: 2px; }
+:root[data-theme="dark"] .admin-shell .toast { background: var(--km-surface); border-color: var(--km-border); }
+:root[data-theme="dark"] .admin-shell .toast-success { border-left-color: var(--success); }
+:root[data-theme="dark"] .admin-shell .toast-danger { border-left-color: var(--danger); }
+:root[data-theme="dark"] .admin-shell .toast strong { color: var(--km-ink); }
+:root[data-theme="dark"] .admin-shell .toast small { color: var(--km-muted); }
+
+/* Responsive QA fixes: remove legacy 900px minimum forcing horizontal overflow. */
+@media (max-width: 1180px) {
+  .release-page .release-local-form { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .release-page .release-local-form .field:last-of-type { grid-column: 1 / -1; }
+}
+@media (max-width: 900px) {
+  .admin-shell, .admin-shell.sidebar-compact {
+    min-width: 0;
+    width: 100%;
+    grid-template-columns: 76px minmax(0,1fr);
+  }
+  .admin-shell .workspace { min-width: 0; width: 100%; height: 100dvh; }
+  .admin-shell .content-area { overflow-x: hidden; overflow-y: auto; }
+  .login-shell { display: grid; place-items: center; }
+  .login-shell .login-panel { min-height: 0; width: min(476px,100%); padding: 0; }
+  .release-page .release-status-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .release-page .release-app-row { grid-template-columns: minmax(0,1fr); }
+}
+@media (max-width: 720px) {
+  .release-page .release-local-form { grid-template-columns: minmax(0,1fr); }
+  .release-page .release-local-form .field:last-of-type { grid-column: auto; }
+  .release-page .release-status-grid { grid-template-columns: minmax(0,1fr); }
+  .release-page .release-conflict { flex-direction: column; align-items: stretch; }
+  .release-page .release-conflict .button { align-self: flex-start; max-width: 100%; white-space: normal; }
+  .release-page .release-panel-heading { flex-wrap: wrap; }
+  .release-page .r2-profile-grid { grid-template-columns: minmax(0,1fr); }
+  .release-page .r2-profile-card { flex-wrap: wrap; }
+  .release-page .r2-profile-actions { flex-wrap: wrap; }
+  .release-page .release-app-row { min-width: 0; }
+  .release-page .release-app-row .cell-title { min-width: 0; }
+  .release-page .release-actions { flex-wrap: wrap; }
+  .management-page .inline-action { grid-template-columns: minmax(0,1fr) minmax(100px,.65fr); }
+  .management-page .inline-action > div { grid-column: 1/-1; }
+}
+@media (max-width: 530px) {
+  .admin-shell .page { padding-inline: 12px; }
+  .admin-shell .page-heading h1 { font-size: 22px; }
+  .admin-shell .page-heading p { font-size: 12px; }
+  .admin-shell .modal-backdrop { padding: 10px; }
+  .admin-shell .modal { width: min(100%,520px); max-height: 94dvh; }
+  .admin-shell .modal-wide { width: min(100%,790px); }
+  .admin-shell .modal-form { padding: 15px; }
+  .admin-shell .form-grid.two,.admin-shell .form-grid.three { grid-template-columns: minmax(0,1fr); }
+  .admin-shell .modal-actions { flex-wrap: wrap; justify-content: flex-end; }
+  .admin-shell .inline-action { grid-template-columns: minmax(0,1fr); }
+  .admin-shell .inline-action > div { grid-column: auto; }
+  .admin-shell .detail-summary-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .admin-shell .detail-summary-grid > div { border-bottom: 1px solid var(--km-border); }
+  .admin-shell .detail-summary-grid > div:nth-child(2n) { border-right: 0; }
+  .admin-shell .detail-summary-grid > div:nth-last-child(-n+2) { border-bottom: 0; }
+  .release-page .release-status-grid strong { overflow-wrap: anywhere; white-space: normal; }
+  .login-shell { padding: 64px 16px 24px; }
+  .login-shell .login-card { padding: 25px 20px; }
+  .login-shell .login-theme-toggle { top: 16px; right: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .login-shell *, .release-page *, .team-page *, .admin-shell .toast {
+    animation-duration: .01ms !important;
+    transition-duration: .01ms !important;
+  }
+}
