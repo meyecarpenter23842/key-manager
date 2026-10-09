@@ -51,22 +51,26 @@ export function DashboardPage({ onError }: { onError: ErrorHandler }) {
   return (
     <div className="page dashboard-page">
       <div className="page-heading dashboard-heading">
-        <div><span className="eyebrow dark">OVERVIEW</span><h1>Trung tâm điều khiển</h1><p>Theo dõi tình trạng license và thiết bị trên toàn hệ thống.</p></div>
+        <div><span className="eyebrow dark">TỔNG QUAN HỆ THỐNG</span><h1>Trung tâm điều khiển</h1><p>Theo dõi tình trạng license và thiết bị trên toàn hệ thống.</p></div>
         <button className="button secondary" type="button" onClick={() => void load()} disabled={loading}><RefreshIcon size={17} /> Làm mới</button>
       </div>
       <section className="stat-grid">
         {cards.map((card) => (
           <article className="stat-card" key={card.label}>
-            <div className={`stat-icon ${card.tone}`}>{card.icon}</div>
-            <div><span>{card.label}</span><strong>{loading ? "—" : card.value.toLocaleString("vi-VN")}</strong><small>{card.meta}</small></div>
+            <div className="stat-card-heading">
+              <span className="stat-label">{card.label}</span>
+              <span className={`stat-icon ${card.tone}`} aria-hidden="true">{card.icon}</span>
+            </div>
+            <strong className="stat-value">{loading ? "—" : card.value.toLocaleString("vi-VN")}</strong>
+            <small className="stat-meta">{card.meta}</small>
           </article>
         ))}
       </section>
       <section className="panel recent-panel">
         <header className="panel-header"><div><h2>License cập nhật gần đây</h2><p>6 license mới hoặc vừa được thay đổi.</p></div></header>
-        <div className="table-wrap">
+        <div className="table-wrap dashboard-table-wrap">
           <table>
-            <thead><tr><th>License</th><th>Ứng dụng</th><th>Khách hàng</th><th>Loại</th><th>Hết hạn</th><th>Trạng thái</th></tr></thead>
+            <thead><tr><th scope="col">License</th><th scope="col">Ứng dụng</th><th scope="col">Khách hàng</th><th scope="col">Loại</th><th scope="col">Hết hạn</th><th scope="col">Trạng thái</th></tr></thead>
             <tbody>
               {loading ? <LoadingRows columns={6} /> : recent.map((item) => (
                 <tr key={item.id}>
