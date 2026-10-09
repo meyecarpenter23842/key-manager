@@ -266,7 +266,7 @@ export function CustomersPage({
   useEffect(() => setOffset(0), [debouncedSearch]);
 
   return (
-    <div className="page">
+    <div className="page management-page">
       <div className="page-heading">
         <div>
           <span className="eyebrow dark">CUSTOMERS</span>
@@ -280,19 +280,19 @@ export function CustomersPage({
         ) : null}
       </div>
 
-      <section className="panel">
-        <div className="toolbar">
+      <section className="panel management-panel">
+        <div className="toolbar management-toolbar">
           <SearchBox value={search} onChange={setSearch} placeholder="Tên, email, điện thoại, công ty..." />
         </div>
-        <div className="table-wrap">
-          <table>
+        <div className="table-wrap management-table-wrap">
+          <table className="management-table">
             <thead>
               <tr>
-                <th>Khách hàng</th>
-                <th>Liên hệ</th>
-                <th>Công ty</th>
-                <th>Cập nhật</th>
-                <th />
+                <th scope="col">Khách hàng</th>
+                <th scope="col">Liên hệ</th>
+                <th scope="col">Công ty</th>
+                <th scope="col">Cập nhật</th>
+                <th scope="col"><span className="visually-hidden">Thao tác</span></th>
               </tr>
             </thead>
             <tbody>
@@ -327,7 +327,7 @@ export function CustomersPage({
                             event.stopPropagation();
                             setEditing(item);
                           }}
-                          aria-label="Sửa"
+                          aria-label={`Sửa khách hàng ${item.name}`}
                         >
                           <EditIcon size={16} />
                         </button>

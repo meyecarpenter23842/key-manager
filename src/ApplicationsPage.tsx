@@ -273,7 +273,7 @@ export function ApplicationsPage({
   useEffect(() => setOffset(0), [debouncedSearch, status]);
 
   return (
-    <div className="page">
+    <div className="page management-page">
       <div className="page-heading">
         <div>
           <span className="eyebrow dark">APPLICATIONS</span>
@@ -287,26 +287,26 @@ export function ApplicationsPage({
         ) : null}
       </div>
 
-      <section className="panel">
-        <div className="toolbar">
+      <section className="panel management-panel">
+        <div className="toolbar management-toolbar">
           <SearchBox value={search} onChange={setSearch} placeholder="Tên hoặc app code..." />
-          <select value={status} onChange={(event) => setStatus(event.target.value)}>
+          <select value={status} onChange={(event) => setStatus(event.target.value)} aria-label="Lọc trạng thái ứng dụng">
             <option value="">Mọi trạng thái</option>
             <option value="ACTIVE">ACTIVE</option>
             <option value="DISABLED">DISABLED</option>
           </select>
         </div>
 
-        <div className="table-wrap">
-          <table>
+        <div className="table-wrap management-table-wrap">
+          <table className="management-table">
             <thead>
               <tr>
-                <th>Ứng dụng</th>
-                <th>Version</th>
-                <th>Offline grace</th>
-                <th>Mặc định license</th>
-                <th>Trạng thái</th>
-                <th />
+                <th scope="col">Ứng dụng</th>
+                <th scope="col">Version</th>
+                <th scope="col">Offline grace</th>
+                <th scope="col">Mặc định license</th>
+                <th scope="col">Trạng thái</th>
+                <th scope="col"><span className="visually-hidden">Thao tác</span></th>
               </tr>
             </thead>
             <tbody>
@@ -344,7 +344,7 @@ export function ApplicationsPage({
                           className="icon-button small"
                           type="button"
                           onClick={() => setEditing(item)}
-                          aria-label="Sửa"
+                          aria-label={`Sửa ứng dụng ${item.name}`}
                         >
                           <EditIcon size={16} />
                         </button>
